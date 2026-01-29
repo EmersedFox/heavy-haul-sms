@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 
-// Define what a "Job" looks like so TypeScript is happy
+// Define what a "Job" looks like
 type Job = {
   id: string
   status: string
@@ -27,17 +27,27 @@ export default function Dashboard() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [jobs, setJobs] = useState<Job[]>([])
+  const [role, setRole] = useState('') // New State for Role
 
   useEffect(() => {
     async function fetchData() {
-      // 1. Check User
+      // 1. Check User Session
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         router.push('/login')
         return
       }
 
-      // 2. Fetch Jobs (and grab linked Vehicle + Customer info)
+      // 2. Check Role (Admin vs Technician)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single()
+      
+      if (profile) setRole(profile.role)
+
+      // 3. Fetch Jobs
       const { data, error } = await supabase
         .from('jobs')
         .select(`
@@ -53,7 +63,7 @@ export default function Dashboard() {
         .order('created_at', { ascending: false })
 
       if (error) console.error('Error fetching jobs:', error)
-      if (data) setJobs(data as any) // "as any" simplifies the complex nesting types
+      if (data) setJobs(data as any)
 
       setLoading(false)
     }
@@ -92,6 +102,14 @@ export default function Dashboard() {
 
         {/* Right Side Nav */}
         <div className="flex gap-4 items-center">
+          
+          {/* ADMIN BUTTON (Only shows if role is 'admin') */}
+          {role === 'admin' && (
+            <Link href="/admin" className="text-sm text-amber-500 hover:text-amber-400 font-bold border border-amber-500/30 px-3 py-1 rounded bg-amber-500/10">
+              Admin Console
+            </Link>
+          )}
+
           <Link href="/account" className="text-sm text-slate-400 hover:text-white transition-colors">
             Settings
           </Link>
