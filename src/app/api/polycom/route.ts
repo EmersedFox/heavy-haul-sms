@@ -30,7 +30,7 @@ export async function GET() {
   // The phone cannot see "localhost". It must be an IP address.
   // Make sure 'logo-small.jpg' exists in your 'public' folder.
   // Polycom VVX screens are small, keep the image around 150px wide.
-  const logoUrl = `http://192.168.1.50:3000/logo-small.jpg` 
+  const logoUrl = `http://178.156.174.10:3000/logo-small.jpg` 
 
   // 3. Build the XML Response
   const xml = `

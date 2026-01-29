@@ -4,6 +4,9 @@ import { supabase } from '@/lib/supabaseClient'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 
+// Simple ID generator
+const generateId = () => Math.random().toString(36).substr(2, 9)
+
 // 1. GENERAL ITEMS
 const GENERAL_CHECKLISTS: any = {
   car: ['Lights (Head/Tail/Brake)', 'Wipers & Washers', 'Horn', 'Brake Pads/Rotors', 'Fluid Levels', 'Battery Health', 'Belts & Hoses', 'Suspension Components', 'Exhaust System', 'Clutch / Transmission', 'Dashboard Warning Lights'],
@@ -23,7 +26,7 @@ export default function JobTicketPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  
+   
   // Data State
   const [job, setJob] = useState<any>(null)
   const [techs, setTechs] = useState<any[]>([]) 
@@ -35,6 +38,10 @@ export default function JobTicketPage() {
   // Inspection State
   const [inspection, setInspection] = useState<any>({})
   const [recommendations, setRecommendations] = useState<any>({})
+  
+  // --- NEW: SERVICE JOBS STATE (The Repair Lines) ---
+  const [serviceJobs, setServiceJobs] = useState<any[]>([])
+
   const [showInspection, setShowInspection] = useState(false)
 
   const fetchData = useCallback(async () => {
@@ -63,8 +70,16 @@ export default function JobTicketPage() {
       const savedChecklist = inspData?.checklist || {}
       const savedRecs = inspData?.recommendations || {}
       
+      // Load Service Jobs if they exist in the recommendations JSON
+      if (savedRecs.service_lines) {
+        setServiceJobs(savedRecs.service_lines)
+      } else {
+        // Default to one empty job line if none exist
+        setServiceJobs([{ id: generateId(), title: 'Diagnosis / Primary Repair', labor: [], parts: [] }])
+      }
+
       const finalChecklist: any = {}
-      const finalRecs: any = {}
+      const finalRecs: any = { ...savedRecs }
 
       allItems.forEach(item => {
         finalChecklist[item] = savedChecklist[item] || { status: 'pending', note: '' }
@@ -90,12 +105,19 @@ export default function JobTicketPage() {
     const { error: jobError } = await supabase.from('jobs').update({ tech_diagnosis: notes, status: status }).eq('id', id)
     if (jobError) { alert('Error saving status: ' + jobError.message); setSaving(false); return }
 
+    // Combine standard recs with our Service Jobs structure
+    // We are storing serviceJobs inside the existing 'recommendations' column to avoid DB changes
+    const payloadRecs = {
+        ...recommendations,
+        service_lines: serviceJobs
+    }
+
     // Update Inspection
     await supabase.from('inspections').upsert(
       { 
         job_id: id, 
         checklist: inspection, 
-        recommendations: recommendations, 
+        recommendations: payloadRecs, 
         updated_at: new Date() 
       }, 
       { onConflict: 'job_id' }
@@ -123,7 +145,85 @@ export default function JobTicketPage() {
     alert('Public Link Copied!\nSend this to the customer:\n\n' + url)
   }
 
-  // --- HELPERS ---
+  // --- JOB LINE LOGIC (Dark Mode) ---
+
+  const addServiceJob = (title = '') => {
+    setServiceJobs([...serviceJobs, { id: generateId(), title: title || '', labor: [], parts: [] }])
+  }
+
+  const removeServiceJob = (jobId: string) => {
+    if (!confirm('Delete this entire job line?')) return
+    setServiceJobs(serviceJobs.filter(j => j.id !== jobId))
+  }
+
+  const updateJobTitle = (jobId: string, val: string) => {
+    setServiceJobs(serviceJobs.map(j => j.id === jobId ? { ...j, title: val } : j))
+  }
+
+  const addLabor = (jobId: string, initialData?: any) => {
+    setServiceJobs(serviceJobs.map(j => {
+      if (j.id !== jobId) return j
+      const newLabor = { 
+        id: generateId(), 
+        desc: initialData?.desc || '', 
+        hours: initialData?.hours || 0, 
+        rate: initialData?.rate || 120 
+      }
+      return { ...j, labor: [...j.labor, newLabor] }
+    }))
+  }
+
+  const updateLabor = (jobId: string, laborId: string, field: string, val: any) => {
+    setServiceJobs(serviceJobs.map(j => {
+      if (j.id !== jobId) return j
+      return { ...j, labor: j.labor.map((l: any) => l.id === laborId ? { ...l, [field]: val } : l) }
+    }))
+  }
+
+  const removeLabor = (jobId: string, laborId: string) => {
+    setServiceJobs(serviceJobs.map(j => {
+      if (j.id !== jobId) return j
+      return { ...j, labor: j.labor.filter((l: any) => l.id !== laborId) }
+    }))
+  }
+
+  const addPart = (jobId: string, initialData?: any) => {
+    setServiceJobs(serviceJobs.map(j => {
+      if (j.id !== jobId) return j
+      const newPart = {
+        id: generateId(),
+        partNumber: '',
+        name: initialData?.name || '',
+        qty: 1,
+        price: initialData?.price || 0
+      }
+      return { ...j, parts: [...j.parts, newPart] }
+    }))
+  }
+
+  const updatePart = (jobId: string, partId: string, field: string, val: any) => {
+    setServiceJobs(serviceJobs.map(j => {
+      if (j.id !== jobId) return j
+      return { ...j, parts: j.parts.map((p: any) => p.id === partId ? { ...p, [field]: val } : p) }
+    }))
+  }
+
+  const removePart = (jobId: string, partId: string) => {
+    setServiceJobs(serviceJobs.map(j => {
+      if (j.id !== jobId) return j
+      return { ...j, parts: j.parts.filter((p: any) => p.id !== partId) }
+    }))
+  }
+
+  const getJobTotals = (job: any) => {
+    const laborTotal = job.labor.reduce((acc: number, l: any) => acc + (parseFloat(l.hours || 0) * parseFloat(l.rate || 0)), 0)
+    const partsTotal = job.parts.reduce((acc: number, p: any) => acc + (parseFloat(p.qty || 0) * parseFloat(p.price || 0)), 0)
+    return { laborTotal, partsTotal, total: laborTotal + partsTotal }
+  }
+
+
+  // --- HELPERS & LOGIC ---
+
   const toggleItem = (item: string, newStatus: string) => {
     setInspection({ ...inspection, [item]: { ...inspection[item], status: newStatus } })
   }
@@ -135,6 +235,37 @@ export default function JobTicketPage() {
   const updateRec = (item: string, field: string, value: any) => {
     let newData = { ...recommendations[item], [field]: value }
     if (field === 'noCost' && value === true) { newData.parts = 0; newData.labor = 0 }
+    
+    // --- MAGIC: If Approved, Add to Job Line ---
+    if (field === 'decision' && value === 'approved') {
+        const existingJob = serviceJobs.find(j => j.title === (newData.service || item))
+        // Only add if it doesn't already exist to prevent duplicates
+        if (!existingJob) {
+             const newJobId = generateId()
+             const newJob = { 
+                 id: newJobId, 
+                 title: newData.service || `Repair: ${item}`, 
+                 labor: [], 
+                 parts: [] 
+             }
+             
+             // We temporarily add it to our state, we have to do it in a weird way 
+             // because setServiceJobs is async vs setRecommendations
+             // We will chain the state updates
+             
+             const jobWithItems = { ...newJob }
+             if (newData.labor > 0) {
+                 jobWithItems.labor.push({ id: generateId(), desc: 'Labor', hours: 1, rate: newData.labor })
+             }
+             if (newData.parts > 0) {
+                 jobWithItems.parts.push({ id: generateId(), partNumber: '', name: 'Parts', qty: 1, price: newData.parts })
+             }
+             
+             setServiceJobs(prev => [...prev, jobWithItems])
+             alert(`Linked "${item}" to a new Job Line!`)
+        }
+    }
+
     setRecommendations({ ...recommendations, [item]: newData })
   }
 
@@ -170,9 +301,10 @@ export default function JobTicketPage() {
             {rec.decision === 'pending' && <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">PENDING</span>}
             
             {isEditable && (
-              <div className="flex gap-1 ml-2 border-l border-slate-700 pl-2">
-                <button onClick={() => updateRec(item, 'decision', 'approved')} title="Mark Approved (Phone)" className="text-xs opacity-50 hover:opacity-100 hover:text-green-400">✅</button>
-                <button onClick={() => updateRec(item, 'decision', 'denied')} title="Mark Denied (Phone)" className="text-xs opacity-50 hover:opacity-100 hover:text-red-400">❌</button>
+              <div className="flex gap-1 ml-2 border-l border-slate-700 pl-2 items-center">
+                <button onClick={() => updateRec(item, 'decision', 'approved')} title="Mark Approved" className="text-xs opacity-50 hover:opacity-100 hover:text-green-400">✅</button>
+                <button onClick={() => updateRec(item, 'decision', 'denied')} title="Mark Denied" className="text-xs opacity-50 hover:opacity-100 hover:text-red-400">❌</button>
+                <button onClick={() => updateRec(item, 'decision', 'pending')} title="Reset to Pending" className="text-xs opacity-50 hover:opacity-100 hover:text-blue-400 font-bold px-1 ml-1">↺</button>
               </div>
             )}
           </div>
@@ -269,14 +401,104 @@ export default function JobTicketPage() {
         {/* RIGHT COLUMN */}
         <div className="lg:col-span-2 space-y-6">
           <div className="flex border-b border-slate-800 mb-4">
-            <button onClick={() => setShowInspection(false)} className={`px-6 py-3 font-bold text-sm ${!showInspection ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-400 hover:text-white'}`}>Diagnosis & Notes</button>
+            <button onClick={() => setShowInspection(false)} className={`px-6 py-3 font-bold text-sm ${!showInspection ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-400 hover:text-white'}`}>Diagnosis & Jobs</button>
             <button onClick={() => setShowInspection(true)} className={`px-6 py-3 font-bold text-sm ${showInspection ? 'text-amber-500 border-b-2 border-amber-500' : 'text-slate-400 hover:text-white'}`}>Inspection Checklist</button>
           </div>
 
           {!showInspection ? (
              <div className="space-y-6">
                <div className="bg-red-900/10 border border-red-900/30 p-5 rounded-lg"><h3 className="text-red-400 text-sm font-bold uppercase mb-2">Customer Complaint</h3><p className="text-slate-200">{job.customer_complaint}</p></div>
-               <div className="bg-slate-900 p-5 rounded-lg border border-slate-800 h-96 flex flex-col"><h3 className="text-sm font-bold text-slate-400 uppercase mb-3">Technician Diagnosis</h3><textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="flex-grow bg-slate-950 border border-slate-700 rounded p-4 text-white focus:border-amber-500 outline-none font-mono" placeholder="Technician notes..." /></div>
+               <div className="bg-slate-900 p-5 rounded-lg border border-slate-800 h-40 flex flex-col"><h3 className="text-sm font-bold text-slate-400 uppercase mb-3">Technician Diagnosis</h3><textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="flex-grow bg-slate-950 border border-slate-700 rounded p-4 text-white focus:border-amber-500 outline-none font-mono" placeholder="Technician notes..." /></div>
+               
+               {/* --- JOB LINES / REPAIR ORDERS --- */}
+               <div className="border-t border-slate-800 pt-6">
+                 <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2">🛠️ Repair Orders / Service Jobs</h2>
+                    <button onClick={() => addServiceJob()} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold px-4 py-2 rounded">+ New Job Line</button>
+                 </div>
+
+                 <div className="space-y-8">
+                   {serviceJobs.map((j, index) => {
+                     const totals = getJobTotals(j)
+                     return (
+                       <div key={j.id} className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700 shadow-lg">
+                         
+                         {/* Job Header */}
+                         <div className="bg-slate-800 p-4 flex justify-between items-center border-b border-slate-700">
+                           <div className="flex-grow mr-4">
+                              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Job #{index + 1} Title</label>
+                              <input 
+                                type="text" 
+                                placeholder="e.g. Check Engine Diag OR Front Brakes" 
+                                value={j.title} 
+                                onChange={(e) => updateJobTitle(j.id, e.target.value)} 
+                                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-lg font-bold text-white focus:border-indigo-500 outline-none"
+                              />
+                           </div>
+                           <div className="text-right">
+                              <div className="text-xs text-slate-500 uppercase font-bold">Line Total</div>
+                              <div className="text-xl font-bold text-indigo-400">${totals.total.toFixed(2)}</div>
+                              <button onClick={() => removeServiceJob(j.id)} className="text-red-500 text-xs hover:underline mt-1">Delete Job</button>
+                           </div>
+                         </div>
+
+                         {/* LABOR SECTION */}
+                         <div className="p-4 bg-slate-900/50">
+                            <div className="flex justify-between items-center mb-2 pb-1 border-b border-slate-800">
+                                <h4 className="font-bold text-slate-500 text-sm">LABOR</h4>
+                                <button onClick={() => addLabor(j.id)} className="text-xs bg-slate-800 border border-slate-700 text-slate-300 px-2 py-1 rounded hover:bg-slate-700 hover:text-white">+ Add Labor</button>
+                            </div>
+                            {j.labor.map((l: any) => (
+                              <div key={l.id} className="grid grid-cols-12 gap-2 mb-2 items-center">
+                                <div className="col-span-6"><input type="text" placeholder="Operation" value={l.desc} onChange={(e) => updateLabor(j.id, l.id, 'desc', e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white p-2 rounded text-sm" /></div>
+                                <div className="col-span-2 relative"><span className="absolute left-2 top-2 text-xs text-gray-500">Hrs</span><input type="number" value={l.hours} onChange={(e) => updateLabor(j.id, l.id, 'hours', e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white p-2 pl-8 rounded text-sm" /></div>
+                                <div className="col-span-2 relative"><span className="absolute left-2 top-2 text-xs text-gray-500">$</span><input type="number" value={l.rate} onChange={(e) => updateLabor(j.id, l.id, 'rate', e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white p-2 pl-5 rounded text-sm" /></div>
+                                <div className="col-span-2 flex justify-between items-center">
+                                   <span className="font-bold text-sm text-slate-400 ml-2">${(l.hours * l.rate).toFixed(2)}</span>
+                                   <button onClick={() => removeLabor(j.id, l.id)} className="text-red-400 hover:text-red-500 font-bold px-2">x</button>
+                                </div>
+                              </div>
+                            ))}
+                         </div>
+
+                         {/* PARTS SECTION */}
+                         <div className="p-4 bg-slate-900 border-t border-slate-800">
+                            <div className="flex justify-between items-center mb-2 pb-1 border-b border-slate-800">
+                                <h4 className="font-bold text-slate-500 text-sm">PARTS</h4>
+                                <button onClick={() => addPart(j.id)} className="text-xs bg-slate-800 border border-slate-700 text-slate-300 px-2 py-1 rounded hover:bg-slate-700 hover:text-white">+ Add Part</button>
+                            </div>
+                            
+                            {/* Parts Header Row */}
+                            {j.parts.length > 0 && (
+                                <div className="grid grid-cols-12 gap-2 mb-1 px-1 text-xs font-bold text-slate-500 uppercase">
+                                    <div className="col-span-3">Part #</div>
+                                    <div className="col-span-4">Description</div>
+                                    <div className="col-span-1">Qty</div>
+                                    <div className="col-span-2">Price</div>
+                                    <div className="col-span-2">Total</div>
+                                </div>
+                            )}
+
+                            {j.parts.map((p: any) => (
+                              <div key={p.id} className="grid grid-cols-12 gap-2 mb-2 items-center">
+                                <div className="col-span-3"><input type="text" placeholder="Part #" value={p.partNumber} onChange={(e) => updatePart(j.id, p.id, 'partNumber', e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white p-2 rounded text-sm font-mono" /></div>
+                                <div className="col-span-4"><input type="text" placeholder="Name" value={p.name} onChange={(e) => updatePart(j.id, p.id, 'name', e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white p-2 rounded text-sm" /></div>
+                                <div className="col-span-1"><input type="number" value={p.qty} onChange={(e) => updatePart(j.id, p.id, 'qty', e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white p-2 rounded text-sm text-center" /></div>
+                                <div className="col-span-2 relative"><span className="absolute left-2 top-2 text-xs text-gray-500">$</span><input type="number" value={p.price} onChange={(e) => updatePart(j.id, p.id, 'price', e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white p-2 pl-5 rounded text-sm" /></div>
+                                <div className="col-span-2 flex justify-between items-center">
+                                   <span className="font-bold text-sm text-slate-400 ml-2">${(p.qty * p.price).toFixed(2)}</span>
+                                   <button onClick={() => removePart(j.id, p.id)} className="text-red-400 hover:text-red-500 font-bold px-2">x</button>
+                                </div>
+                              </div>
+                            ))}
+                         </div>
+
+                       </div>
+                     )
+                   })}
+                 </div>
+               </div>
+
              </div>
           ) : (
              <div className="space-y-8">
@@ -296,7 +518,7 @@ export default function JobTicketPage() {
                  </div>
                )}
 
-               {/* SECTION 1: GENERAL INSPECTION (Note only on Fail) */}
+               {/* SECTION 1: GENERAL INSPECTION */}
                <div className="bg-slate-900 p-6 rounded-lg border border-slate-800">
                  <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><span>🔍</span> General Inspection</h3>
                  <div className="space-y-4">
@@ -321,7 +543,7 @@ export default function JobTicketPage() {
                  </div>
                </div>
 
-               {/* SECTION 2: TIRE STATION (Always Show Note) */}
+               {/* SECTION 2: TIRE STATION */}
                <div className="bg-slate-900 p-6 rounded-lg border border-slate-800">
                  <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><span>🛞</span> Tire Station</h3>
                  <p className="text-xs text-slate-500 mb-6">Record Tread Depth & PSI for all tires.</p>

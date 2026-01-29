@@ -44,7 +44,7 @@ export default function Dashboard() {
 
   // --- LOGIC: Checking for Approved Recommendations ---
   const hasApprovedWork = (job: any) => {
-    // Handle both object and array structures for the 'inspections' join
+    // FIX: Handle both object and array structures for the 'inspections' join
     const insp = job.inspections
     const recommendations = insp?.recommendations || insp?.[0]?.recommendations
 
@@ -72,15 +72,28 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans">
+      
       {/* Top Navigation */}
       <nav className="border-b border-slate-800 bg-slate-900 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-lg">
         <div className="relative h-12 w-48 md:w-64"> 
           <Image src="/cover.png" alt="Heavy Haul" fill className="object-contain object-left" priority />
         </div>
         <div className="flex gap-4 items-center">
+          
+          {/* ARCHIVE LINK (Admins & Advisors) */}
           {(role === 'admin' || role === 'advisor') && (
-            <Link href="/jobs/archive" className="text-sm text-slate-400 hover:text-white border-r border-slate-700 pr-4">🗄️ Archives</Link>
+            <Link href="/jobs/archive" className="text-sm text-slate-400 hover:text-white border-r border-slate-700 pr-4">
+              🗄️ Archives
+            </Link>
           )}
+
+          {/* ADMIN CONSOLE (Admins Only) - RESTORED */}
+          {role === 'admin' && (
+            <Link href="/admin" className="text-sm text-amber-500 hover:text-amber-400 font-bold border border-amber-500/30 px-3 py-1 rounded bg-amber-500/10">
+              Admin Console
+            </Link>
+          )}
+
           <Link href="/account" className="text-sm text-slate-400 hover:text-white">Settings</Link>
           <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }} className="text-sm text-slate-400 border border-slate-700 px-3 py-1 rounded">Sign Out</button>
         </div>
