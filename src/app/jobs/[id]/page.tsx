@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 
+
 // 1. GENERAL ITEMS (Updated with Clutch)
 const GENERAL_CHECKLISTS: any = {
   car: [
@@ -58,7 +59,7 @@ export default function JobTicketPage() {
   const [techs, setTechs] = useState<any[]>([]) 
   const [notes, setNotes] = useState('')
   const [status, setStatus] = useState('')
-  const [isArchived, setIsArchived] = useState(false) // <--- ARCHIVE STATE
+  const [isArchived, setIsArchived] = useState(false)
   
   // Permissions State
   const [userRole, setUserRole] = useState('')
@@ -95,6 +96,7 @@ export default function JobTicketPage() {
       setStatus(jobData.status)
       setIsArchived(jobData.is_archived || false)
       if (profileData) setTechs(profileData)
+	  document.title = `Ticket #${jobData.id.slice(0, 8)} | Heavy Haul Auto`
 
       // 5. SMART MERGE (Self-Healing Checklist)
       const type = jobData.vehicles.vehicle_type || 'car'
@@ -149,6 +151,12 @@ export default function JobTicketPage() {
     if (newValue) router.push('/dashboard') // Redirect on Archive
   }
 
+  const copyPublicLink = () => {
+    const url = `${window.location.origin}/public/inspection/${id}`
+    navigator.clipboard.writeText(url)
+    alert('Public Link Copied!\nSend this to the customer:\n\n' + url)
+  }
+
   // --- INSPECTION HELPERS ---
 
   const toggleItem = (item: string, newStatus: string) => {
@@ -187,6 +195,15 @@ export default function JobTicketPage() {
             Back
           </Link>
           
+          {/* SHARE BUTTON */}
+          <button 
+            onClick={copyPublicLink} 
+            className="px-3 py-2 border border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/10 rounded flex items-center gap-2" 
+            title="Copy Link for Customer"
+          >
+            🔗 Share
+          </button>
+
           {/* PRINT BUTTON */}
           <Link href={`/jobs/${id}/print-inspection`}>
             <button className="px-3 py-2 border border-slate-700 rounded text-slate-300 hover:bg-slate-800 hover:text-white" title="Print Inspection Report">
