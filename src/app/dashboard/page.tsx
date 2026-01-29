@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 
-// Define what a "Job" looks like
+// ... (Keep your Job type definition) ...
 type Job = {
   id: string
   status: string
@@ -27,50 +27,33 @@ export default function Dashboard() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [jobs, setJobs] = useState<Job[]>([])
-  const [role, setRole] = useState('') // New State for Role
+  const [role, setRole] = useState('')
 
   useEffect(() => {
     async function fetchData() {
-      // 1. Check User Session
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push('/login')
-        return
-      }
+      if (!session) { router.push('/login'); return }
 
-      // 2. Check Role (Admin vs Technician)
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', session.user.id)
-        .single()
-      
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
       if (profile) setRole(profile.role)
 
-      // 3. Fetch Jobs
+      // UPDATED QUERY: Filter out archived jobs
       const { data, error } = await supabase
         .from('jobs')
         .select(`
-          id,
-          status,
-          created_at,
-          customer_complaint,
-          vehicles (
-            year, make, model, unit_number,
-            customers (first_name, last_name)
-          )
+          id, status, created_at, customer_complaint,
+          vehicles (year, make, model, unit_number, customers (first_name, last_name))
         `)
+        .eq('is_archived', false) // <--- HIDES ARCHIVED JOBS
         .order('created_at', { ascending: false })
 
-      if (error) console.error('Error fetching jobs:', error)
       if (data) setJobs(data as any)
-
       setLoading(false)
     }
     fetchData()
   }, [router])
 
-  // Helper to color-code statuses
+  // ... (Keep getStatusColor helper) ...
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'scheduled': return 'bg-blue-500/20 text-blue-400 border-blue-500/50'
@@ -88,42 +71,31 @@ export default function Dashboard() {
     <div className="min-h-screen bg-slate-950 text-white">
       {/* Top Bar */}
       <nav className="border-b border-slate-800 bg-slate-900 px-6 py-3 flex justify-between items-center sticky top-0 z-10">
-        
-        {/* LOGO */}
         <div className="relative h-12 w-48 md:w-64"> 
-          <Image 
-            src="/cover.png" 
-            alt="Heavy Haul Auto Service" 
-            fill 
-            className="object-contain object-left"
-            priority
-          />
+          <Image src="/cover.png" alt="Heavy Haul Auto Service" fill className="object-contain object-left" priority />
         </div>
 
-        {/* Right Side Nav */}
         <div className="flex gap-4 items-center">
-          
-          {/* ADMIN BUTTON (Only shows if role is 'admin') */}
+          {/* ARCHIVE LINK - Only for Admins/Advisors */}
+          {(role === 'admin' || role === 'advisor') && (
+            <Link href="/jobs/archive" className="text-sm text-slate-400 hover:text-white border-r border-slate-700 pr-4">
+              🗄️ Archives
+            </Link>
+          )}
+
           {role === 'admin' && (
             <Link href="/admin" className="text-sm text-amber-500 hover:text-amber-400 font-bold border border-amber-500/30 px-3 py-1 rounded bg-amber-500/10">
               Admin Console
             </Link>
           )}
 
-          <Link href="/account" className="text-sm text-slate-400 hover:text-white transition-colors">
-            Settings
-          </Link>
-          <button 
-            onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
-            className="text-sm text-slate-400 hover:text-white border border-slate-700 px-3 py-1 rounded transition-colors"
-          >
-            Sign Out
-          </button>
+          <Link href="/account" className="text-sm text-slate-400 hover:text-white">Settings</Link>
+          <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }} className="text-sm text-slate-400 hover:text-white border border-slate-700 px-3 py-1 rounded">Sign Out</button>
         </div>
       </nav>
 
-      {/* Main Content */}
       <main className="p-6 max-w-7xl mx-auto">
+        {/* ... (Keep the rest of your dashboard code exactly the same) ... */}
         <div className="mb-6 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-slate-100">Active Jobs ({jobs.length})</h2>
           <Link href="/jobs/new">
@@ -143,42 +115,23 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {jobs.map((job) => (
               <div key={job.id} className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-slate-600 transition-colors shadow-sm flex flex-col h-full">
-                
-                {/* Header: Vehicle & Status */}
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <h3 className="font-bold text-lg text-white">
-                      {job.vehicles.year} {job.vehicles.make} {job.vehicles.model}
-                    </h3>
-                    {job.vehicles.unit_number && (
-                      <span className="text-xs font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-400 mt-1 inline-block">
-                        Unit #{job.vehicles.unit_number}
-                      </span>
-                    )}
+                    <h3 className="font-bold text-lg text-white">{job.vehicles.year} {job.vehicles.make} {job.vehicles.model}</h3>
+                    {job.vehicles.unit_number && <span className="text-xs font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-400 mt-1 inline-block">Unit #{job.vehicles.unit_number}</span>}
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded border font-medium uppercase tracking-wide ${getStatusColor(job.status)}`}>
-                    {job.status.replace('_', ' ')}
-                  </span>
+                  <span className={`text-xs px-2 py-1 rounded border font-medium uppercase tracking-wide ${getStatusColor(job.status)}`}>{job.status.replace('_', ' ')}</span>
                 </div>
-
-                {/* Customer */}
                 <div className="flex items-center gap-2 text-slate-400 text-sm mb-4">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                  {job.vehicles.customers.first_name} {job.vehicles.customers.last_name}
+                  <span className="text-xs">👤</span> {job.vehicles.customers.first_name} {job.vehicles.customers.last_name}
                 </div>
-
-                {/* Complaint Preview */}
                 <div className="bg-slate-950 p-3 rounded text-sm text-slate-300 border border-slate-800/50 flex-grow mb-4">
                   <span className="text-slate-500 text-xs block mb-1 uppercase font-bold">Issue:</span>
                   <p className="line-clamp-3">{job.customer_complaint}</p>
                 </div>
-
-                {/* Action Footer */}
                 <div className="pt-3 border-t border-slate-800 flex justify-end">
                   <Link href={`/jobs/${job.id}`}>
-                    <button className="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 group">
-                      Open Ticket <span className="group-hover:translate-x-1 transition-transform">→</span>
-                    </button>
+                    <button className="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 group">Open Ticket →</button>
                   </Link>
                 </div>
               </div>

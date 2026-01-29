@@ -25,6 +25,7 @@ export default function EditJobPage() {
     model: '',
     vin: '',
     unit_number: '',
+    type: 'car', // <--- Added Type
     complaint: ''
   })
 
@@ -35,7 +36,7 @@ export default function EditJobPage() {
         .select(`
           *,
           vehicles (
-            id, year, make, model, vin, unit_number,
+            id, year, make, model, vin, unit_number, vehicle_type,
             customers (id, first_name, last_name, phone, email, billing_address, company_name)
           )
         `)
@@ -62,6 +63,7 @@ export default function EditJobPage() {
         model: data.vehicles.model,
         vin: data.vehicles.vin || '',
         unit_number: data.vehicles.unit_number || '',
+        type: data.vehicles.vehicle_type || 'car', // <--- Load Type
         complaint: data.customer_complaint
       })
       setLoading(false)
@@ -93,7 +95,7 @@ export default function EditJobPage() {
         .eq('id', ids.customerId)
       if (custError) throw custError
 
-      // 2. Update Vehicle
+      // 2. Update Vehicle (Including Type)
       const { error: vehError } = await supabase
         .from('vehicles')
         .update({
@@ -101,7 +103,8 @@ export default function EditJobPage() {
           make: formData.make,
           model: formData.model,
           vin: formData.vin,
-          unit_number: formData.unit_number
+          unit_number: formData.unit_number,
+          vehicle_type: formData.type // <--- Save Type
         })
         .eq('id', ids.vehicleId)
       if (vehError) throw vehError
@@ -151,6 +154,31 @@ export default function EditJobPage() {
           {/* VEHICLE EDIT */}
           <div className="bg-slate-900 p-6 rounded-lg border border-slate-800">
             <h2 className="text-xl font-semibold mb-4 text-slate-300">Vehicle Details</h2>
+            
+            {/* TYPE SELECTOR - NEW! */}
+            <div className="mb-6">
+              <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Vehicle Type</label>
+              <div className="flex gap-4">
+                {['car', 'heavy_truck', 'trailer'].map((type) => (
+                  <label key={type} className={`flex-1 cursor-pointer border rounded p-3 text-center uppercase font-bold text-sm transition-colors ${
+                     formData.type === type 
+                       ? 'bg-amber-500 text-slate-900 border-amber-500' 
+                       : 'bg-slate-950 text-slate-400 border-slate-700 hover:border-slate-500'
+                  }`}>
+                    <input 
+                      type="radio" 
+                      name="type" 
+                      value={type} 
+                      checked={formData.type === type} 
+                      onChange={handleChange} 
+                      className="hidden" 
+                    />
+                    {type.replace('_', ' ')}
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-3 gap-4">
               <input name="year" type="number" value={formData.year} onChange={handleChange} placeholder="Year" className="bg-slate-800 border-slate-700 rounded p-3 text-white" />
               <input name="make" value={formData.make} onChange={handleChange} placeholder="Make" className="bg-slate-800 border-slate-700 rounded p-3 text-white" />

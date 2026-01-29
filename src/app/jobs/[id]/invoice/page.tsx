@@ -14,6 +14,7 @@ export default function InvoicePage() {
   const [newItem, setNewItem] = useState({ description: '', qty: 1, price: 0, type: 'labor' })
 
   const fetchJob = useCallback(async () => {
+	  
     const { data, error } = await supabase
       .from('jobs')
       .select(`
@@ -34,6 +35,18 @@ export default function InvoicePage() {
       setItems(data.job_items || [])
       setLoading(false)
     }
+	// Inside fetchJob, after getting the data...
+
+// 1. Get Current User Role
+const { data: { user } } = await supabase.auth.getUser()
+const { data: profile } = await supabase.from('profiles').select('role').eq('id', user?.id).single()
+
+// 2. KICK OUT TECHNICIANS
+if (profile?.role === 'technician') {
+  alert('Access Denied: Invoices are for Office Staff only.')
+  router.push(`/jobs/${id}`) // Send them back to the ticket
+  return
+}
   }, [id, router])
 
   useEffect(() => { fetchJob() }, [fetchJob])
