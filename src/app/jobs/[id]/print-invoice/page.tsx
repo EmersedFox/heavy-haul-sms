@@ -28,6 +28,7 @@ export default function PrintInvoicePage() {
                 finalJobs = approvedOld.map((item: any) => ({
                     id: Math.random(),
                     title: item.service,
+                    // Force Number conversion
                     labor: item.labor ? [{ desc: 'Service Labor', hours: 1, rate: Number(item.labor) }] : [], 
                     parts: item.parts ? [{ name: 'Service Parts', qty: 1, price: Number(item.parts), partNumber: 'N/A' }] : []
                 }))
@@ -35,7 +36,7 @@ export default function PrintInvoicePage() {
 
             setInvoiceJobs(finalJobs)
 
-            // 2. Calculate Totals
+            // 2. Calculate Totals (Force Numbers)
             let pTotal = 0
             let lTotal = 0
             finalJobs.forEach((j: any) => {
@@ -52,8 +53,11 @@ export default function PrintInvoicePage() {
     fetchData()
   }, [id])
 
-  // Currency Helper
-  const fmt = (n: number) => `$${n.toFixed(2)}`
+  // Safe Currency Helper (Prevents the crash)
+  const fmt = (n: any) => {
+      const num = Number(n) || 0
+      return `$${num.toFixed(2)}`
+  }
 
   if (loading) return <div className="p-10 bg-white text-slate-900 font-sans">Loading Invoice...</div>
 
@@ -123,9 +127,9 @@ export default function PrintInvoicePage() {
               </thead>
               <tbody className="divide-y divide-slate-200 border border-slate-200">
                 {invoiceJobs.map((jobLine, idx) => {
-                     // Calculate Line Total
-                     const jobLabor = jobLine.labor?.reduce((acc: any, l: any) => acc + (l.hours * l.rate), 0) || 0
-                     const jobParts = jobLine.parts?.reduce((acc: any, p: any) => acc + (p.qty * p.price), 0) || 0
+                     // Calculate Line Total (Safe Numbers)
+                     const jobLabor = jobLine.labor?.reduce((acc: any, l: any) => acc + (Number(l.hours) * Number(l.rate)), 0) || 0
+                     const jobParts = jobLine.parts?.reduce((acc: any, p: any) => acc + (Number(p.qty) * Number(p.price)), 0) || 0
                      
                      return (
                         <>
@@ -144,7 +148,7 @@ export default function PrintInvoicePage() {
                                     <td className="p-2 pl-8 text-xs italic">Labor: {l.desc}</td>
                                     <td className="p-2 text-center text-xs">{l.hours}</td>
                                     <td className="p-2 text-right text-xs">{fmt(l.rate)}</td>
-                                    <td className="p-2 text-right text-xs">{fmt(l.hours * l.rate)}</td>
+                                    <td className="p-2 text-right text-xs">{fmt(Number(l.hours) * Number(l.rate))}</td>
                                 </tr>
                             ))}
 
@@ -157,7 +161,7 @@ export default function PrintInvoicePage() {
                                     </td>
                                     <td className="p-2 text-center text-xs">{p.qty}</td>
                                     <td className="p-2 text-right text-xs">{fmt(p.price)}</td>
-                                    <td className="p-2 text-right text-xs">{fmt(p.qty * p.price)}</td>
+                                    <td className="p-2 text-right text-xs">{fmt(Number(p.qty) * Number(p.price))}</td>
                                 </tr>
                             ))}
                         </>
