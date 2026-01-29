@@ -53,7 +53,7 @@ export default function Dashboard() {
         .order('created_at', { ascending: false })
 
       if (error) console.error('Error fetching jobs:', error)
-      if (data) setJobs(data as any) // "as any" handles the complex nesting types simply
+      if (data) setJobs(data as any) // "as any" simplifies the complex nesting types
 
       setLoading(false)
     }
@@ -65,8 +65,10 @@ export default function Dashboard() {
     switch (status) {
       case 'scheduled': return 'bg-blue-500/20 text-blue-400 border-blue-500/50'
       case 'in_shop': return 'bg-amber-500/20 text-amber-400 border-amber-500/50'
+      case 'waiting_parts': return 'bg-purple-500/20 text-purple-400 border-purple-500/50'
       case 'ready': return 'bg-green-500/20 text-green-400 border-green-500/50'
-      default: return 'bg-slate-700 text-slate-300 border-slate-600'
+      case 'invoiced': return 'bg-slate-700 text-slate-300 border-slate-600'
+      default: return 'bg-slate-800 text-slate-400 border-slate-700'
     }
   }
 
@@ -76,7 +78,9 @@ export default function Dashboard() {
     <div className="min-h-screen bg-slate-950 text-white">
       {/* Top Bar */}
       <nav className="border-b border-slate-800 bg-slate-900 px-6 py-3 flex justify-between items-center sticky top-0 z-10">
-        <div className="relative h-12 w-64"> 
+        
+        {/* LOGO */}
+        <div className="relative h-12 w-48 md:w-64"> 
           <Image 
             src="/cover.png" 
             alt="Heavy Haul Auto Service" 
@@ -85,12 +89,19 @@ export default function Dashboard() {
             priority
           />
         </div>
-        <button 
-          onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
-          className="text-sm text-slate-400 hover:text-white border border-slate-700 px-3 py-1 rounded transition-colors"
-        >
-          Sign Out
-        </button>
+
+        {/* Right Side Nav */}
+        <div className="flex gap-4 items-center">
+          <Link href="/account" className="text-sm text-slate-400 hover:text-white transition-colors">
+            Settings
+          </Link>
+          <button 
+            onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
+            className="text-sm text-slate-400 hover:text-white border border-slate-700 px-3 py-1 rounded transition-colors"
+          >
+            Sign Out
+          </button>
+        </div>
       </nav>
 
       {/* Main Content */}
@@ -113,7 +124,7 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {jobs.map((job) => (
-              <div key={job.id} className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-slate-600 transition-colors shadow-sm">
+              <div key={job.id} className="bg-slate-900 border border-slate-800 rounded-lg p-5 hover:border-slate-600 transition-colors shadow-sm flex flex-col h-full">
                 
                 {/* Header: Vehicle & Status */}
                 <div className="flex justify-between items-start mb-3">
@@ -122,7 +133,7 @@ export default function Dashboard() {
                       {job.vehicles.year} {job.vehicles.make} {job.vehicles.model}
                     </h3>
                     {job.vehicles.unit_number && (
-                      <span className="text-xs font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-400">
+                      <span className="text-xs font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-400 mt-1 inline-block">
                         Unit #{job.vehicles.unit_number}
                       </span>
                     )}
@@ -139,20 +150,19 @@ export default function Dashboard() {
                 </div>
 
                 {/* Complaint Preview */}
-                <div className="bg-slate-950 p-3 rounded text-sm text-slate-300 border border-slate-800/50">
+                <div className="bg-slate-950 p-3 rounded text-sm text-slate-300 border border-slate-800/50 flex-grow mb-4">
                   <span className="text-slate-500 text-xs block mb-1 uppercase font-bold">Issue:</span>
-                  {job.customer_complaint}
+                  <p className="line-clamp-3">{job.customer_complaint}</p>
                 </div>
 
                 {/* Action Footer */}
-				<div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
-				  {/* WRAP THIS BUTTON */}
-				  <Link href={`/jobs/${job.id}`}>
-					<button className="text-sm text-indigo-400 hover:text-indigo-300 font-medium">
-					  Open Ticket →
-					</button>
-				  </Link>
-				</div>
+                <div className="pt-3 border-t border-slate-800 flex justify-end">
+                  <Link href={`/jobs/${job.id}`}>
+                    <button className="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 group">
+                      Open Ticket <span className="group-hover:translate-x-1 transition-transform">→</span>
+                    </button>
+                  </Link>
+                </div>
               </div>
             ))}
           </div>
