@@ -10,7 +10,6 @@ export default function InvoicePage() {
   const [loading, setLoading] = useState(true)
   const [job, setJob] = useState<any>(null)
   
-  // We store everything in this "Job Structure" now
   const [invoiceJobs, setInvoiceJobs] = useState<any[]>([])
   
   const [totals, setTotals] = useState({ parts: 0, labor: 0, tax: 0, total: 0 })
@@ -34,9 +33,8 @@ export default function InvoicePage() {
                 finalJobs = approvedOld.map((item: any) => ({
                     id: Math.random(),
                     title: item.service,
-                    // Convert flat 'labor' price to 1 hr @ price
+                    // Force Number() conversion here just in case
                     labor: item.labor ? [{ desc: 'Service Labor', hours: 1, rate: Number(item.labor) }] : [], 
-                    // Convert flat 'parts' price to 1 unit @ price
                     parts: item.parts ? [{ name: 'Service Parts', qty: 1, price: Number(item.parts), partNumber: 'N/A' }] : []
                 }))
             }
@@ -48,9 +46,9 @@ export default function InvoicePage() {
             let lTotal = 0
 
             finalJobs.forEach((j: any) => {
-                // Sum Labor
+                // Sum Labor (Safe Number conversion)
                 if(j.labor) j.labor.forEach((l: any) => lTotal += (Number(l.hours || 0) * Number(l.rate || 0)))
-                // Sum Parts
+                // Sum Parts (Safe Number conversion)
                 if(j.parts) j.parts.forEach((p: any) => pTotal += (Number(p.qty || 0) * Number(p.price || 0)))
             })
 
@@ -69,8 +67,11 @@ export default function InvoicePage() {
     alert('Invoice Link Copied!\n\n' + url)
   }
 
-  // Helper to format currency
-  const fmt = (n: number) => `$${n.toFixed(2)}`
+  // Helper to format currency (Safely handles strings)
+  const fmt = (n: any) => {
+      const num = Number(n) || 0
+      return `$${num.toFixed(2)}`
+  }
 
   if (loading) return <div className="p-10 text-white bg-slate-950 min-h-screen">Loading Invoice...</div>
 
@@ -91,11 +92,11 @@ export default function InvoicePage() {
             <button onClick={copyPublicInvoice} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded shadow-lg flex items-center gap-2">
                 🔗 Share with Customer
             </button>
-			<Link href={`/jobs/${id}/print-invoice`}>
-  <button className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded shadow-lg flex items-center gap-2">
-     🖨️ Print PDF
-  </button>
-</Link>
+            <Link href={`/jobs/${id}/print-invoice`}>
+              <button className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded shadow-lg flex items-center gap-2">
+                 🖨️ Print PDF
+              </button>
+            </Link>
         </div>
       </div>
 
@@ -114,9 +115,9 @@ export default function InvoicePage() {
             
             <tbody className="divide-y divide-slate-800/50">
                 {invoiceJobs.map((jobLine, idx) => {
-                    // Calculate Job Subtotal for display
-                    const jobLabor = jobLine.labor?.reduce((acc: number, l: any) => acc + (l.hours * l.rate), 0) || 0
-                    const jobParts = jobLine.parts?.reduce((acc: number, p: any) => acc + (p.qty * p.price), 0) || 0
+                    // Calculate Job Subtotal with Safe Numbers
+                    const jobLabor = jobLine.labor?.reduce((acc: number, l: any) => acc + (Number(l.hours || 0) * Number(l.rate || 0)), 0) || 0
+                    const jobParts = jobLine.parts?.reduce((acc: number, p: any) => acc + (Number(p.qty || 0) * Number(p.price || 0)), 0) || 0
                     const jobTotal = jobLabor + jobParts
 
                     return (
@@ -138,9 +139,10 @@ export default function InvoicePage() {
                                         <span className="text-slate-500 text-xs mr-2 uppercase tracking-wide">Labor</span>
                                         {l.desc}
                                     </td>
+                                    {/* FORCE NUMBER CONVERSION ON DISPLAY */}
                                     <td className="py-2 text-center text-sm">{l.hours}</td>
                                     <td className="py-2 text-right text-sm text-slate-400">{fmt(l.rate)}</td>
-                                    <td className="py-2 text-right text-sm">{fmt(l.hours * l.rate)}</td>
+                                    <td className="py-2 text-right text-sm">{fmt(Number(l.hours) * Number(l.rate))}</td>
                                 </tr>
                             ))}
 
@@ -152,9 +154,10 @@ export default function InvoicePage() {
                                         {p.name} 
                                         {p.partNumber && <span className="ml-2 font-mono text-xs text-slate-500 bg-slate-800 px-1 rounded">{p.partNumber}</span>}
                                     </td>
+                                    {/* FORCE NUMBER CONVERSION ON DISPLAY */}
                                     <td className="py-2 text-center text-sm">{p.qty}</td>
                                     <td className="py-2 text-right text-sm text-slate-400">{fmt(p.price)}</td>
-                                    <td className="py-2 text-right text-sm">{fmt(p.qty * p.price)}</td>
+                                    <td className="py-2 text-right text-sm">{fmt(Number(p.qty) * Number(p.price))}</td>
                                 </tr>
                             ))}
                             
