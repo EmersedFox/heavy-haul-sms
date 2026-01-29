@@ -242,17 +242,16 @@ export default function JobTicketPage() {
         // Only add if it doesn't already exist to prevent duplicates
         if (!existingJob) {
              const newJobId = generateId()
+             
+             // FIX: TypeScript error fixed here by adding 'as any[]'
              const newJob = { 
                  id: newJobId, 
                  title: newData.service || `Repair: ${item}`, 
-                 labor: [], 
-                 parts: [] 
+                 labor: [] as any[], 
+                 parts: [] as any[]
              }
              
-             // We temporarily add it to our state, we have to do it in a weird way 
-             // because setServiceJobs is async vs setRecommendations
-             // We will chain the state updates
-             
+             // We temporarily add it to our state
              const jobWithItems = { ...newJob }
              if (newData.labor > 0) {
                  jobWithItems.labor.push({ id: generateId(), desc: 'Labor', hours: 1, rate: newData.labor })
@@ -357,7 +356,12 @@ export default function JobTicketPage() {
           <Link href="/dashboard" className="px-4 py-2 border border-slate-700 rounded text-slate-300 hover:bg-slate-800">Back</Link>
           <button onClick={copyPublicLink} className="px-3 py-2 border border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/10 rounded flex items-center gap-2">🔗 Share</button>
           <Link href={`/jobs/${id}/print-inspection`}><button className="px-3 py-2 border border-slate-700 rounded text-slate-300 hover:bg-slate-800 hover:text-white">🖨️ Insp.</button></Link>
-          {canViewInvoice && <Link href={`/jobs/${id}/invoice`}><button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded shadow-lg">Invoice $$</button></Link>}
+          {canViewInvoice && (
+             <div className="flex gap-2">
+                 <Link href={`/jobs/${id}/invoice`}><button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded shadow-lg">Invoice $$</button></Link>
+                 <Link href={`/jobs/${id}/print-invoice`}><button className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded shadow-lg">🖨️ PDF</button></Link>
+             </div>
+          )}
           <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold rounded shadow-lg">{saving ? 'Saving...' : 'Save Work'}</button>
         </div>
       </div>
