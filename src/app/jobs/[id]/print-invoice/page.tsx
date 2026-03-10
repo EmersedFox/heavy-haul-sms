@@ -176,43 +176,51 @@ export default function PrintInvoicePage() {
            </table>
         </div>
 
-        {/* TOTALS & FOOTER */}
-        <div className="flex justify-end mb-12 break-inside-avoid">
-           <div className="w-64 bg-slate-50 p-4 rounded border border-slate-200 print:border-slate-300">
-               <div className="flex justify-between mb-2 text-slate-500 text-sm">
-                   <span>Labor</span>
-                   <span>{fmt(totals.labor)}</span>
-               </div>
-               <div className="flex justify-between mb-2 text-slate-500 text-sm">
-                   <span>Parts</span>
-                   <span>{fmt(totals.parts)}</span>
-               </div>
-               <div className="flex justify-between mb-3 text-slate-500 text-sm border-b border-slate-300 pb-2">
-                   <span>Tax (7%)</span>
-                   <span>{fmt(totals.tax)}</span>
-               </div>
-               <div className="flex justify-between text-xl font-bold text-slate-900">
-                   <span>TOTAL</span>
-                   <span>{fmt(totals.total)}</span>
-               </div>
-           </div>
-        </div>
+        {/* TOTALS + DISCLAIMER + SIGNATURE — all one atomic block.
+             break-inside: avoid tells the browser/printer: if this entire
+             section doesn't fit on the current page, move the whole thing
+             to the next page rather than splitting it mid-way. */}
+        <div style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
 
-        {/* DISCLAIMER / SIGNATURE */}
-        <div className="mt-auto pt-8 border-t-2 border-slate-200">
-            <p className="text-xs text-slate-500 mb-8 text-justify leading-relaxed">
-                I hereby authorize the repair work herein set forth to be done along with the necessary material and agree that you are not responsible for loss or damage to vehicle or articles left in vehicle in case of fire, theft, or any other cause beyond your control. I hereby grant you and/or your employees permission to operate the vehicle herein described on streets, highways, or elsewhere for the purpose of testing and/or inspection. An express mechanic's lien is hereby acknowledged on above vehicle to secure the amount of repairs thereto.
-            </p>
-            <div className="flex justify-between items-end gap-12">
-                <div className="w-2/3 border-b border-slate-900 h-8"></div>
-                <div className="w-1/3 text-right text-sm font-bold text-slate-700">Customer Signature / Date</div>
-            </div>
-            
-            <div className="mt-8 text-center text-sm text-slate-400">
-               <p>Heavy Haul Auto Service LLC • P.O. Box 4742, Carmel, IN 46082</p>
-               <p className="font-bold text-amber-500 mt-1">THANK YOU FOR YOUR BUSINESS!</p>
-            </div>
-        </div>
+          {/* TOTALS */}
+          <div className="flex justify-end mb-10 pt-4 border-t-2 border-slate-200">
+             <div className="w-64 bg-slate-50 p-4 rounded border border-slate-200 print:border-slate-300">
+                 <div className="flex justify-between mb-2 text-slate-500 text-sm">
+                     <span>Labor</span>
+                     <span>{fmt(totals.labor)}</span>
+                 </div>
+                 <div className="flex justify-between mb-2 text-slate-500 text-sm">
+                     <span>Parts</span>
+                     <span>{fmt(totals.parts)}</span>
+                 </div>
+                 <div className="flex justify-between mb-3 text-slate-500 text-sm border-b border-slate-300 pb-2">
+                     <span>Tax (7%)</span>
+                     <span>{fmt(totals.tax)}</span>
+                 </div>
+                 <div className="flex justify-between text-xl font-bold text-slate-900">
+                     <span>TOTAL</span>
+                     <span>{fmt(totals.total)}</span>
+                 </div>
+             </div>
+          </div>
+
+          {/* DISCLAIMER / SIGNATURE */}
+          <div className="pt-6 border-t-2 border-slate-200">
+              <p className="text-xs text-slate-500 mb-8 text-justify leading-relaxed">
+                  I hereby authorize the repair work herein set forth to be done along with the necessary material and agree that you are not responsible for loss or damage to vehicle or articles left in vehicle in case of fire, theft, or any other cause beyond your control. I hereby grant you and/or your employees permission to operate the vehicle herein described on streets, highways, or elsewhere for the purpose of testing and/or inspection. An express mechanic's lien is hereby acknowledged on above vehicle to secure the amount of repairs thereto.
+              </p>
+              <div className="flex justify-between items-end gap-12">
+                  <div className="w-2/3 border-b border-slate-900 h-8"></div>
+                  <div className="w-1/3 text-right text-sm font-bold text-slate-700">Customer Signature / Date</div>
+              </div>
+              
+              <div className="mt-8 text-center text-sm text-slate-400">
+                 <p>Heavy Haul Auto Service LLC • P.O. Box 4742, Carmel, IN 46082</p>
+                 <p className="font-bold text-amber-500 mt-1">THANK YOU FOR YOUR BUSINESS!</p>
+              </div>
+          </div>
+
+        </div>{/* end atomic footer block */}
 
       </div>
     </div>

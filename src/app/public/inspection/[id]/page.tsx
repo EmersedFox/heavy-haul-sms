@@ -11,18 +11,19 @@ const TIRE_KEYS = [
   '3LRO', '3LRI', '3RRI', '3RRO'
 ]
 
+// FIX: always round to 2 decimal places before displaying any dollar amount
+const fmt = (n: any) => `$${(Math.round((Number(n) || 0) * 100) / 100).toFixed(2)}`
+
 export default function PublicInspectionPage() {
   const { id } = useParams()
   const [loading, setLoading] = useState(true)
   const [job, setJob] = useState<any>(null)
   
-  // Inspection Data
   const [inspection, setInspection] = useState<any>({})
   const [recommendations, setRecommendations] = useState<any>({})
 
   useEffect(() => {
     const fetchData = async () => {
-      // Fetch Job (Public Read enabled)
       const { data: jobData } = await supabase.from('jobs').select(`*, vehicles (*, customers (*))`).eq('id', id).single()
       const { data: inspData } = await supabase.from('inspections').select('checklist, recommendations').eq('job_id', id).single()
 
@@ -36,40 +37,32 @@ export default function PublicInspectionPage() {
     fetchData()
   }, [id])
 
-  // --- ACTIONS ---
-
   const handleDecision = async (item: string, decision: 'approved' | 'denied') => {
-    // 1. Optimistic Update
     const newRecs = {
       ...recommendations,
       [item]: { ...recommendations[item], decision: decision }
     }
     setRecommendations(newRecs)
-
-    // 2. Save to Database
     await supabase.from('inspections').update({ recommendations: newRecs }).eq('job_id', id)
   }
-
-  // --- FILTERS ---
 
   const allKeys = Object.keys(inspection)
   const tireItems = allKeys.filter(key => TIRE_KEYS.includes(key))
   const generalItems = allKeys.filter(key => !TIRE_KEYS.includes(key))
 
-  // 1. All Failures (Tires + General) go to "Action Required"
   const failItems = allKeys.filter(key => inspection[key].status === 'fail')
-  
-  // 2. Passed General Items
   const passGeneralItems = generalItems.filter(key => inspection[key].status === 'pass')
 
-  // Calculate Total (Only Approved items)
+  // FIX: use Math.round at each step so floating point never accumulates
   const approvedTotal = Object.keys(recommendations).reduce((sum, key) => {
     const rec = recommendations[key]
     if (rec && rec.decision === 'approved') {
-      return sum + (rec.parts || 0) + (rec.labor || 0)
+      const parts = Math.round((Number(rec.parts) || 0) * 100)
+      const labor = Math.round((Number(rec.labor) || 0) * 100)
+      return sum + parts + labor
     }
     return sum
-  }, 0)
+  }, 0) / 100  // sum was in cents, convert back to dollars
 
   if (loading) return <div className="p-10 text-center bg-white text-slate-500">Loading Report...</div>
   if (!job) return <div className="p-10 text-center bg-white text-slate-500">Report not found.</div>
@@ -104,7 +97,7 @@ export default function PublicInspectionPage() {
           </div>
         </div>
 
-        {/* ⚠️ ACTION REQUIRED (Failures + Estimates) */}
+        {/* ⚠️ ACTION REQUIRED */}
         {failItems.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2 text-red-600 border-b border-red-200 pb-2">
@@ -114,14 +107,14 @@ export default function PublicInspectionPage() {
 
             {failItems.map(item => {
               const rec = recommendations[item] || {}
-              const totalCost = (rec.parts || 0) + (rec.labor || 0)
+              // FIX: round each operand in cents before adding, then convert back
+              const totalCost = (Math.round((Number(rec.parts) || 0) * 100) + Math.round((Number(rec.labor) || 0) * 100)) / 100
               const isFree = rec.noCost === true
               const hasQuote = totalCost > 0 || isFree
 
               return (
                 <div key={item} className={`bg-white rounded-xl shadow-sm border-2 overflow-hidden transition-all ${rec.decision === 'approved' ? 'border-green-500 shadow-green-100' : rec.decision === 'denied' ? 'border-slate-200 opacity-75' : 'border-red-100'}`}>
                   
-                  {/* Item Header */}
                   <div className="p-4 bg-slate-50 border-b border-slate-100">
                     <div className="flex justify-between items-start">
                       <h4 className="font-bold text-lg text-slate-800">{item}</h4>
@@ -132,7 +125,6 @@ export default function PublicInspectionPage() {
                     )}
                   </div>
 
-                  {/* Recommendation Body */}
                   {hasQuote ? (
                     <div className="p-4">
                       <div className="mb-4">
@@ -140,7 +132,6 @@ export default function PublicInspectionPage() {
                         <p className="font-medium text-slate-800">{rec.service || 'Repair Required'}</p>
                       </div>
                       
-                      {/* PRICING */}
                       <div className="flex justify-between items-end mb-4 border-b border-dashed border-slate-200 pb-4">
                         {isFree ? (
                           <div className="w-full">
@@ -153,18 +144,19 @@ export default function PublicInspectionPage() {
                         ) : (
                           <>
                             <div className="text-sm text-slate-500">
-                              <p>Parts: ${rec.parts}</p>
-                              <p>Labor: ${rec.labor}</p>
+                              {/* FIX: use fmt() for individual part/labor values too */}
+                              <p>Parts: {fmt(rec.parts)}</p>
+                              <p>Labor: {fmt(rec.labor)}</p>
                             </div>
                             <div className="text-right">
                               <p className="text-xs font-bold text-slate-400 uppercase">Est. Cost</p>
-                              <p className="text-2xl font-black text-slate-900">${totalCost}</p>
+                              {/* FIX: fmt() rounds before displaying */}
+                              <p className="text-2xl font-black text-slate-900">{fmt(totalCost)}</p>
                             </div>
                           </>
                         )}
                       </div>
 
-                      {/* ACTION BUTTONS */}
                       {rec.decision === 'approved' ? (
                         <div className="bg-green-50 text-green-700 font-bold text-center py-3 rounded-lg border border-green-200">
                           ✅ WORK APPROVED
@@ -191,7 +183,7 @@ export default function PublicInspectionPage() {
           </div>
         )}
 
-        {/* 🛞 TIRE HEALTH REPORT (New Section) */}
+        {/* 🛞 TIRE HEALTH REPORT */}
         {tireItems.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-8">
             <div className="bg-slate-100 p-4 border-b border-slate-200 flex items-center gap-2">
@@ -240,7 +232,8 @@ export default function PublicInspectionPage() {
         <div className="max-w-md mx-auto flex justify-between items-center">
           <div>
             <p className="text-xs text-slate-400 uppercase font-bold">Approved Total</p>
-            <p className="text-2xl font-black text-amber-500">${approvedTotal.toFixed(2)}</p>
+            {/* FIX: fmt() ensures this always shows exactly 2 decimal places */}
+            <p className="text-2xl font-black text-amber-500">{fmt(approvedTotal)}</p>
           </div>
           <button 
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} 
