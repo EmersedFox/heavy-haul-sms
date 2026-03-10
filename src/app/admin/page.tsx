@@ -29,6 +29,18 @@ export default function AdminPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
+  // Shop settings state
+  const [showSettings,    setShowSettings]    = useState(false)
+  const [settingsForm,    setSettingsForm]    = useState({
+    labor_rate: '120', tax_rate: '7',
+    parts_markup_retail: '30', parts_markup_commercial: '20',
+    markup_matrix_retail:     [{ upTo: '25', markupPct: '100' },{ upTo: '100', markupPct: '65' },{ upTo: '300', markupPct: '45' },{ upTo: '', markupPct: '30' }],
+    markup_matrix_commercial: [{ upTo: '25', markupPct: '80'  },{ upTo: '100', markupPct: '50' },{ upTo: '300', markupPct: '35' },{ upTo: '', markupPct: '20' }],
+  })
+  const [savingSettings,  setSavingSettings]  = useState(false)
+  const [settingsSaved,   setSettingsSaved]   = useState(false)
+  const [settingsError,   setSettingsError]   = useState('')
+
   useEffect(() => {
     const checkAccessAndFetch = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -43,6 +55,17 @@ export default function AdminPage() {
       }
 
       fetchTeam()
+
+      // Load shop settings
+      const { data: settings } = await supabase.from('shop_settings').select('*').eq('id', 1).single()
+      if (settings) {
+        setSettingsForm({
+          labor_rate: String(settings.labor_rate),
+          parts_markup_retail: String(settings.parts_markup_retail),
+          parts_markup_commercial: String(settings.parts_markup_commercial),
+          tax_rate: String(settings.tax_rate),
+        })
+      }
     }
     checkAccessAndFetch()
   }, [router])
@@ -100,12 +123,63 @@ export default function AdminPage() {
 
       setIsModalOpen(false)
       fetchTeam()
+
+      // Load shop settings
+      const { data: settings } = await supabase.from('shop_settings').select('*').eq('id', 1).single()
+      if (settings) {
+        const parseMatrix = (m: any) => Array.isArray(m) ? m.map((t:any)=>({ upTo: t.upTo===null?'':String(t.upTo), markupPct: String(t.markupPct) })) : [{ upTo:'', markupPct:'30' }]
+        setSettingsForm({
+          labor_rate: String(settings.labor_rate),
+          parts_markup_retail: String(settings.parts_markup_retail),
+          parts_markup_commercial: String(settings.parts_markup_commercial),
+          tax_rate: String(settings.tax_rate),
+          markup_matrix_retail: parseMatrix(settings.markup_matrix_retail),
+          markup_matrix_commercial: parseMatrix(settings.markup_matrix_commercial),
+        })
+      }
       
     } catch (error: any) {
       alert('Error: ' + error.message)
     } finally {
       setFormLoading(false)
     }
+  }
+
+  const updateMatrix = (type: 'retail'|'commercial', idx: number, field: 'upTo'|'markupPct', val: string) => {
+    const key = type==='retail' ? 'markup_matrix_retail' : 'markup_matrix_commercial'
+    setSettingsForm((prev:any) => ({ ...prev, [key]: prev[key].map((t:any,i:number) => i===idx?{...t,[field]:val}:t) }))
+  }
+  const addTier = (type: 'retail'|'commercial') => {
+    const key = type==='retail' ? 'markup_matrix_retail' : 'markup_matrix_commercial'
+    setSettingsForm((prev:any) => ({ ...prev, [key]: [...prev[key], { upTo:'', markupPct:'30' }] }))
+  }
+  const removeTier = (type: 'retail'|'commercial', idx: number) => {
+    const key = type==='retail' ? 'markup_matrix_retail' : 'markup_matrix_commercial'
+    setSettingsForm((prev:any) => ({ ...prev, [key]: prev[key].filter((_:any,i:number)=>i!==idx) }))
+  }
+  const serializeMatrix = (rows: any[]) => rows.map(r => ({ upTo: r.upTo===''?null:parseFloat(r.upTo), markupPct: parseFloat(r.markupPct)||0 }))
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true); setSettingsError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/shop-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session!.access_token}` },
+        body: JSON.stringify({
+          labor_rate: parseFloat(settingsForm.labor_rate),
+          parts_markup_retail: parseFloat(settingsForm.parts_markup_retail),
+          parts_markup_commercial: parseFloat(settingsForm.parts_markup_commercial),
+          tax_rate: parseFloat(settingsForm.tax_rate),
+          markup_matrix_retail: serializeMatrix(settingsForm.markup_matrix_retail),
+          markup_matrix_commercial: serializeMatrix(settingsForm.markup_matrix_commercial),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setSettingsSaved(true)
+    } catch (err: any) { setSettingsError(err.message) }
+    finally { setSavingSettings(false) }
   }
 
   // FIX #8: Delete user handler — calls API route with service role
@@ -119,6 +193,8 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(data.error)
       setDeleteConfirmId(null)
       fetchTeam()
+
+      // not needed on delete
     } catch (error: any) {
       alert('Error deleting user: ' + error.message)
     } finally {
@@ -141,6 +217,9 @@ export default function AdminPage() {
           <div className="flex gap-4">
              <button onClick={openAddModal} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 font-bold rounded shadow-lg transition-colors">
                + Add User
+             </button>
+             <button onClick={() => setShowSettings(true)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold rounded transition-colors text-slate-300">
+               ⚙️ Shop Settings
              </button>
              <Link href="/dashboard" className="px-4 py-2 border border-slate-700 rounded text-slate-300 hover:text-white">
                Exit
@@ -217,6 +296,81 @@ export default function AdminPage() {
         </div>
 
       </div>
+
+      {/* SHOP SETTINGS MODAL */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-2xl p-6 shadow-2xl">
+            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">⚙️ Shop Settings</h2>
+            <div className="space-y-5 overflow-y-auto max-h-[70vh] pr-1">
+              {/* Base rates */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Labor Rate ($/hr)</label>
+                  <div className="relative"><span className="absolute left-3 top-3 text-slate-500 text-sm">$</span>
+                  <input type="number" value={settingsForm.labor_rate} onChange={e=>setSettingsForm({...settingsForm,labor_rate:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-3 pl-7 text-white outline-none focus:border-amber-500" /></div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Tax Rate (%)</label>
+                  <div className="relative"><span className="absolute right-3 top-3 text-slate-500 text-sm">%</span>
+                  <input type="number" value={settingsForm.tax_rate} onChange={e=>setSettingsForm({...settingsForm,tax_rate:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-3 pr-7 text-white outline-none focus:border-amber-500" /></div>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 bg-slate-800/50 rounded p-3 border border-slate-700">
+                💡 <strong className="text-slate-300">Markup Matrix</strong> — set tiered markup by part cost. Tiers apply top-to-bottom; first match wins. Leave "Up To" blank on the last tier to catch all remaining amounts. The flat-rate fallbacks below are used only if the matrix is empty.
+              </p>
+              {/* Matrices */}
+              {(['retail','commercial'] as const).map(type => (
+                <div key={type} className="bg-slate-800/40 rounded-lg p-4 border border-slate-700">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-bold text-sm text-white uppercase">{type === 'retail' ? '🧑 Retail' : '🏢 Commercial'} Markup Matrix</h4>
+                    <button onClick={()=>addTier(type)} className="text-xs text-indigo-400 hover:text-white border border-indigo-500/30 px-2 py-1 rounded">+ Tier</button>
+                  </div>
+                  <div className="grid grid-cols-12 gap-2 mb-1 text-[10px] font-bold text-slate-500 uppercase">
+                    <div className="col-span-5">Part Cost Up To ($)</div>
+                    <div className="col-span-5">Markup %</div>
+                    <div className="col-span-2"></div>
+                  </div>
+                  {settingsForm[type==='retail'?'markup_matrix_retail':'markup_matrix_commercial'].map((tier:any, i:number, arr:any[]) => (
+                    <div key={i} className="grid grid-cols-12 gap-2 mb-2 items-center">
+                      <div className="col-span-5">
+                        <input type="number" placeholder="∞ (blank = unlimited)" value={tier.upTo}
+                          onChange={e=>updateMatrix(type,i,'upTo',e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 text-white p-2 rounded text-sm font-mono" />
+                      </div>
+                      <div className="col-span-5 relative">
+                        <input type="number" value={tier.markupPct} onChange={e=>updateMatrix(type,i,'markupPct',e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 text-white p-2 pr-6 rounded text-sm font-mono" />
+                        <span className="absolute right-2 top-2 text-slate-500 text-xs">%</span>
+                      </div>
+                      <div className="col-span-2 flex justify-end">
+                        <button onClick={()=>removeTier(type,i)} className="text-red-400 hover:text-red-300 font-bold px-2" disabled={arr.length<=1}>×</button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="mt-2 pt-2 border-t border-slate-700/50">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Flat-rate fallback (if matrix is empty)</label>
+                    <div className="relative mt-1">
+                      <input type="number" value={type==='retail'?settingsForm.parts_markup_retail:settingsForm.parts_markup_commercial}
+                        onChange={e=>setSettingsForm({...settingsForm,[type==='retail'?'parts_markup_retail':'parts_markup_commercial']:e.target.value})}
+                        className="w-full bg-slate-950 border border-slate-700 rounded p-2 pr-7 text-white outline-none text-sm" />
+                      <span className="absolute right-2 top-2 text-slate-500 text-xs">%</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {settingsError && <p className="text-red-400 text-sm">{settingsError}</p>}
+              {settingsSaved && <p className="text-green-400 text-sm font-bold">✓ Settings saved!</p>}
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={()=>{setShowSettings(false);setSettingsSaved(false);setSettingsError('')}} className="flex-1 py-3 border border-slate-700 rounded text-slate-300 hover:bg-slate-800">Cancel</button>
+                <button onClick={handleSaveSettings} disabled={savingSettings} className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold rounded disabled:opacity-50">
+                  {savingSettings?'Saving...':'Save Settings'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ADD/EDIT MODAL */}
       {isModalOpen && (

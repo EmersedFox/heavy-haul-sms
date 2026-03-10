@@ -61,7 +61,7 @@ export default function NewJobPage() {
 
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', companyName: '', phone: '', email: '', address: '',
-    year: '', make: '', model: '', vin: '', unit_number: '', type: 'car', complaint: '',
+    year: '', make: '', model: '', vin: '', unit_number: '', type: 'car', complaint: '', customer_type: 'retail',
   })
 
   useEffect(() => {
@@ -118,7 +118,7 @@ export default function NewJobPage() {
   const selectCustomer = (cust: any) => {
     setSelectedCustomerId(cust.id)
     setFormData(prev => ({ ...prev, firstName: cust.first_name, lastName: cust.last_name,
-      companyName: cust.company_name || '', phone: cust.phone || '', email: cust.email || '', address: cust.billing_address || '' }))
+      companyName: cust.company_name || '', phone: cust.phone || '', email: cust.email || '', address: cust.billing_address || '', customer_type: cust.customer_type || 'retail' }))
     setCustResults([]); setCustSearchTerm('')
   }
 
@@ -148,13 +148,15 @@ export default function NewJobPage() {
         const { data: customer, error: custError } = await supabase.from('customers')
           .insert([{ first_name: formData.firstName, last_name: formData.lastName,
             company_name: formData.companyName, phone: formData.phone,
-            email: formData.email, billing_address: formData.address }])
+            email: formData.email, billing_address: formData.address,
+            customer_type: formData.customer_type }])
           .select().single()
         if (custError) throw custError
         customerId = customer.id
       } else {
         await supabase.from('customers').update({ company_name: formData.companyName,
-          billing_address: formData.address, phone: formData.phone }).eq('id', customerId)
+          billing_address: formData.address, phone: formData.phone,
+          customer_type: formData.customer_type }).eq('id', customerId)
       }
       if (!vehicleId) {
         const { data: vehicle, error: vehError } = await supabase.from('vehicles')
@@ -237,6 +239,18 @@ export default function NewJobPage() {
               <input name="firstName"   placeholder="First Name"         value={formData.firstName}   onChange={handleChange} required className="bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none focus:border-indigo-500" />
               <input name="lastName"    placeholder="Last Name"          value={formData.lastName}    onChange={handleChange} required className="bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none focus:border-indigo-500" />
               <input name="companyName" placeholder="Company (Optional)" value={formData.companyName} onChange={handleChange} className="col-span-2 bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none focus:border-indigo-500" />
+              <div className="col-span-2">
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Customer Type</label>
+                <div className="flex gap-3">
+                  {(['retail','commercial'] as const).map(t => (
+                    <label key={t} className={`flex-1 cursor-pointer border rounded p-3 text-center font-bold text-sm uppercase transition-colors ${formData.customer_type===t?t==='commercial'?'bg-blue-600 text-white border-blue-500':'bg-amber-500 text-slate-900 border-amber-500':'bg-slate-950 text-slate-400 border-slate-700 hover:border-slate-500'}`}>
+                      <input type="radio" name="customer_type" value={t} checked={formData.customer_type===t} onChange={handleChange} className="hidden" />
+                      {t==='commercial'?'🏢 Commercial / Fleet':'🧑 Retail Customer'}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Controls parts markup rate applied to this customer's invoices.</p>
+              </div>
               <input name="phone"       placeholder="Phone"              value={formData.phone}       onChange={handleChange} required className="bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none focus:border-indigo-500" />
               <input name="email"       placeholder="Email"              value={formData.email}       onChange={handleChange} className="bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none focus:border-indigo-500" />
               <input name="address"     placeholder="Billing Address"    value={formData.address}     onChange={handleChange} className="col-span-2 bg-slate-800 border border-slate-700 rounded p-3 text-white outline-none focus:border-indigo-500" />

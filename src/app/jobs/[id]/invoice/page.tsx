@@ -1,210 +1,94 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useRouter, useParams } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { fmt, getSellPrice, computeTotals, DEFAULT_SETTINGS, type ShopSettings } from '@/lib/markup'
 
 export default function InvoicePage() {
   const { id } = useParams()
-  const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [job, setJob] = useState<any>(null)
-  
-  const [invoiceJobs, setInvoiceJobs] = useState<any[]>([])
-  const [totals, setTotals] = useState({ parts: 0, labor: 0, tax: 0, total: 0 })
+  const [loading,     setLoading]     = useState(true)
+  const [job,         setJob]         = useState<any>(null)
+  const [lines,       setLines]       = useState<any[]>([])
+  const [totals,      setTotals]      = useState({ partsTotal:0, laborTotal:0, taxAmt:0, grandTotal:0 })
+  const [settings,    setSettings]    = useState<ShopSettings>(DEFAULT_SETTINGS)
+  const [custType,    setCustType]    = useState<'retail'|'commercial'>('retail')
 
   useEffect(() => {
-    async function fetchData() {
-        const { data: jobData } = await supabase.from('jobs').select(`*, vehicles (*, customers (*))`).eq('id', id).single()
-        const { data: inspData } = await supabase.from('inspections').select('recommendations').eq('job_id', id).single()
-        
-        if (jobData && inspData?.recommendations) {
-            const recs = inspData.recommendations
-            let finalJobs = []
-
-            if (recs.service_lines && Array.isArray(recs.service_lines)) {
-                finalJobs = recs.service_lines
-            } else {
-                const approvedOld = Object.values(recs).filter((r: any) => r.decision === 'approved')
-                finalJobs = approvedOld.map((item: any) => ({
-                    id: Math.random(),
-                    title: item.service,
-                    labor: item.labor ? [{ desc: 'Service Labor', hours: 1, rate: Number(item.labor) }] : [], 
-                    parts: item.parts ? [{ name: 'Service Parts', qty: 1, price: Number(item.parts), partNumber: 'N/A' }] : []
-                }))
-            }
-
-            setInvoiceJobs(finalJobs)
-
-            let pTotal = 0
-            let lTotal = 0
-
-            finalJobs.forEach((j: any) => {
-                if(j.labor) j.labor.forEach((l: any) => lTotal += (Number(l.hours || 0) * Number(l.rate || 0)))
-                if(j.parts) j.parts.forEach((p: any) => pTotal += (Number(p.qty || 0) * Number(p.price || 0)))
-            })
-
-            const tax = pTotal * 0.07
-            setTotals({ parts: pTotal, labor: lTotal, tax, total: pTotal + lTotal + tax })
-            setJob(jobData)
-        }
-        setLoading(false)
+    async function load() {
+      const [{ data: job }, { data: insp }, { data: s }] = await Promise.all([
+        supabase.from('jobs').select('*, vehicles(*, customers(*))').eq('id', id).single(),
+        supabase.from('inspections').select('recommendations').eq('job_id', id).single(),
+        supabase.from('shop_settings').select('*').eq('id', 1).single(),
+      ])
+      if (!job) { setLoading(false); return }
+      const ss: ShopSettings = s || DEFAULT_SETTINGS
+      const ct = (job.vehicles?.customers?.customer_type || 'retail') as 'retail'|'commercial'
+      setJob(job); setSettings(ss); setCustType(ct)
+      const recs = insp?.recommendations
+      let serviceLines: any[] = []
+      if (recs?.service_lines) serviceLines = recs.service_lines
+      else if (recs) serviceLines = Object.values(recs).filter((r:any)=>r.decision==='approved').map((r:any,i:number)=>({ id:i, title:r.service||'Service', labor:r.labor?[{desc:'Labor',hours:1,rate:Number(r.labor)}]:[], parts:r.parts?[{name:'Parts',qty:1,price:Number(r.parts),partNumber:''}]:[] }))
+      setLines(serviceLines)
+      setTotals(computeTotals(serviceLines, ct, ss))
+      setLoading(false)
     }
-    fetchData()
+    load()
   }, [id])
 
-  const copyPublicInvoice = () => {
-    const url = `${window.location.origin}/public/invoice/${id}`
-    navigator.clipboard.writeText(url)
-    alert('Invoice Link Copied!\n\n' + url)
-  }
-
-  // FIX #4: Safe fmt helper with || 0 guard
-  const fmt = (n: any) => {
-      const num = Number(n) || 0
-      return `$${num.toFixed(2)}`
-  }
-
-  if (loading) return <div className="p-10 text-white bg-slate-950 min-h-screen">Loading Invoice...</div>
+  const copy = () => { navigator.clipboard.writeText(`${window.location.origin}/public/invoice/${id}`); alert('Invoice link copied!') }
+  if (loading) return <div className="p-10 text-white bg-slate-950 min-h-screen font-sans">Loading Invoice...</div>
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 font-sans">
-      
-      {/* HEADER */}
-      <div className="max-w-4xl mx-auto flex justify-between items-center mb-8 border-b border-slate-800 pb-6">
+      <div className="max-w-4xl mx-auto mb-8 border-b border-slate-800 pb-6 flex justify-between items-start flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Invoice #{job.id.slice(0,8)}</h1>
-          <p className="text-slate-400">{job.vehicles.customers.first_name} {job.vehicles.customers.last_name}</p>
-          <p className="text-sm text-slate-500 mt-1">{job.vehicles.year} {job.vehicles.make} {job.vehicles.model}</p>
-          {job.odometer && (
-            <p className="text-sm text-slate-500 font-mono mt-0.5">ODO: {Number(job.odometer).toLocaleString()} mi</p>
-          )}
+          <h1 className="text-3xl font-bold">Invoice <span className="text-slate-400 font-mono text-xl">#{job.id.slice(0,8)}</span></h1>
+          <p className="text-slate-300 mt-1 font-medium">{job.vehicles.customers.first_name} {job.vehicles.customers.last_name}</p>
+          {job.vehicles.customers.company_name && <p className="text-slate-500 text-sm">{job.vehicles.customers.company_name}</p>}
+          <p className="text-slate-500 text-sm">{job.vehicles.year} {job.vehicles.make} {job.vehicles.model}</p>
+          {job.odometer && <p className="text-slate-500 text-sm font-mono">ODO: {Number(job.odometer).toLocaleString()} mi</p>}
+          <span className={`mt-1 inline-block text-[10px] font-bold border px-2 py-0.5 rounded uppercase ${custType==='commercial'?'bg-blue-500/20 text-blue-400 border-blue-500/30':'bg-slate-700 text-slate-300 border-slate-600'}`}>{custType}</span>
         </div>
-        <div className="flex gap-3">
-            <Link href={`/jobs/${id}`}>
-                <button className="px-4 py-2 border border-slate-700 rounded text-slate-300 hover:bg-slate-800">Back to Job</button>
-            </Link>
-            <button onClick={copyPublicInvoice} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded shadow-lg flex items-center gap-2">
-                🔗 Share with Customer
-            </button>
-            <Link href={`/jobs/${id}/print-invoice`}>
-              <button className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded shadow-lg flex items-center gap-2">
-                 🖨️ Print PDF
-              </button>
-            </Link>
+        <div className="flex gap-2 flex-wrap">
+          <Link href={`/jobs/${id}`}><button className="px-4 py-2 border border-slate-700 rounded text-slate-300 hover:bg-slate-800 text-sm">← Back</button></Link>
+          <button onClick={copy} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded text-sm">🔗 Share</button>
+          <Link href={`/jobs/${id}/print-invoice`}><button className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded text-sm">🖨️ Print</button></Link>
         </div>
       </div>
 
-      {/* INVOICE CONTENT */}
-      <div className="max-w-4xl mx-auto bg-slate-900 rounded-lg p-8 border border-slate-800 shadow-2xl">
-        
+      <div className="max-w-4xl mx-auto bg-slate-900 rounded-xl p-8 border border-slate-800 shadow-2xl">
         <table className="w-full text-left mb-8 border-collapse">
-            <thead className="text-slate-500 border-b-2 border-slate-800 text-xs uppercase tracking-wider">
-                <tr>
-                    <th className="pb-3 w-1/2">Description / Part #</th>
-                    <th className="pb-3 text-center">Qty / Hrs</th>
-                    <th className="pb-3 text-right">Rate / Price</th>
-                    <th className="pb-3 text-right">Amount</th>
-                </tr>
-            </thead>
-            
-            <tbody className="divide-y divide-slate-800/50">
-                {/* FIX #2: Use React.Fragment with key instead of bare <> */}
-                {invoiceJobs.map((jobLine, idx) => {
-                    const jobLabor = jobLine.labor?.reduce((acc: number, l: any) => acc + (Number(l.hours || 0) * Number(l.rate || 0)), 0) || 0
-                    const jobParts = jobLine.parts?.reduce((acc: number, p: any) => acc + (Number(p.qty || 0) * Number(p.price || 0)), 0) || 0
-                    const jobTotal = jobLabor + jobParts
-
-                    return (
-                        <tr key={`job-group-${jobLine.id ?? idx}`} style={{ display: 'contents' }}>
-                            {/* Using a wrapper approach: render all rows flat with unique keys */}
-                        </tr>
-                    )
-                })}
-                {invoiceJobs.map((jobLine, idx) => {
-                    const jobLabor = jobLine.labor?.reduce((acc: number, l: any) => acc + (Number(l.hours || 0) * Number(l.rate || 0)), 0) || 0
-                    const jobParts = jobLine.parts?.reduce((acc: number, p: any) => acc + (Number(p.qty || 0) * Number(p.price || 0)), 0) || 0
-                    const jobTotal = jobLabor + jobParts
-                    const groupKey = jobLine.id ?? idx
-
-                    // FIX #2: Flatten all rows into the array, each with a unique key
-                    const rows = []
-
-                    // JOB HEADER ROW
-                    rows.push(
-                        <tr key={`header-${groupKey}`} className="bg-slate-800/50">
-                            <td className="py-3 pl-2 font-bold text-indigo-400" colSpan={3}>
-                                {idx + 1}. {jobLine.title}
-                            </td>
-                            <td className="py-3 text-right font-bold text-indigo-400">
-                                {fmt(jobTotal)}
-                            </td>
-                        </tr>
-                    )
-
-                    // LABOR ROWS
-                    jobLine.labor?.forEach((l: any, lIdx: number) => {
-                        rows.push(
-                            <tr key={`labor-${groupKey}-${lIdx}`} className="text-slate-300 hover:bg-slate-800/30">
-                                <td className="py-2 pl-6 text-sm">
-                                    <span className="text-slate-500 text-xs mr-2 uppercase tracking-wide">Labor</span>
-                                    {l.desc}
-                                </td>
-                                <td className="py-2 text-center text-sm">{l.hours}</td>
-                                <td className="py-2 text-right text-sm text-slate-400">{fmt(l.rate)}</td>
-                                <td className="py-2 text-right text-sm">{fmt(Number(l.hours) * Number(l.rate))}</td>
-                            </tr>
-                        )
-                    })
-
-                    // PARTS ROWS
-                    jobLine.parts?.forEach((p: any, pIdx: number) => {
-                        rows.push(
-                            <tr key={`part-${groupKey}-${pIdx}`} className="text-slate-300 hover:bg-slate-800/30">
-                                <td className="py-2 pl-6 text-sm">
-                                    <span className="text-slate-500 text-xs mr-2 uppercase tracking-wide">Part</span>
-                                    {p.name} 
-                                    {p.partNumber && <span className="ml-2 font-mono text-xs text-slate-500 bg-slate-800 px-1 rounded">{p.partNumber}</span>}
-                                </td>
-                                <td className="py-2 text-center text-sm">{p.qty}</td>
-                                <td className="py-2 text-right text-sm text-slate-400">{fmt(p.price)}</td>
-                                <td className="py-2 text-right text-sm">{fmt(Number(p.qty) * Number(p.price))}</td>
-                            </tr>
-                        )
-                    })
-
-                    // SPACER ROW
-                    rows.push(
-                        <tr key={`spacer-${groupKey}`}><td colSpan={4} className="h-4"></td></tr>
-                    )
-
-                    return rows
-                })}
-            </tbody>
+          <thead className="text-slate-500 border-b-2 border-slate-800 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="pb-3 w-1/2">Description</th>
+              <th className="pb-3 text-center">Qty / Hrs</th>
+              <th className="pb-3 text-right">Unit Price</th>
+              <th className="pb-3 text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line, idx) => {
+              const gk = line.id ?? idx
+              const rows: any[] = []
+              const lAmt = (line.labor||[]).reduce((a:number,l:any)=>a+(Number(l.hours)||0)*(Number(l.rate)||0),0)
+              const pAmt = (line.parts||[]).reduce((a:number,p:any)=>a+(Number(p.qty)||0)*getSellPrice(Number(p.price)||0,custType,settings),0)
+              rows.push(<tr key={`h-${gk}`} className="bg-slate-800/60"><td className="py-3 pl-3 font-bold text-amber-400" colSpan={3}>{idx+1}. {line.title}</td><td className="py-3 pr-3 text-right font-bold text-amber-400">{fmt(lAmt+pAmt)}</td></tr>)
+              ;(line.labor||[]).forEach((l:any,i:number)=>rows.push(<tr key={`l-${gk}-${i}`} className="border-b border-slate-800/40 text-slate-300"><td className="py-2 pl-8 text-sm"><span className="text-slate-500 text-xs uppercase mr-1">Labor</span>{l.desc}</td><td className="py-2 text-center text-sm">{l.hours}h</td><td className="py-2 text-right text-sm text-slate-400">{fmt(l.rate)}/hr</td><td className="py-2 text-right text-sm">{fmt(Number(l.hours)*Number(l.rate))}</td></tr>))
+              ;(line.parts||[]).forEach((p:any,i:number)=>{const sell=getSellPrice(Number(p.price)||0,custType,settings);rows.push(<tr key={`p-${gk}-${i}`} className="border-b border-slate-800/40 text-slate-300"><td className="py-2 pl-8 text-sm"><span className="text-slate-500 text-xs uppercase mr-1">Part</span>{p.name}{p.partNumber&&<span className="ml-2 font-mono text-xs text-slate-500 bg-slate-800 px-1 rounded">{p.partNumber}</span>}</td><td className="py-2 text-center text-sm">×{p.qty}</td><td className="py-2 text-right text-sm text-slate-400">{fmt(sell)}</td><td className="py-2 text-right text-sm">{fmt(Number(p.qty)*sell)}</td></tr>)})
+              rows.push(<tr key={`sp-${gk}`}><td colSpan={4} className="h-3"></td></tr>)
+              return rows
+            })}
+          </tbody>
         </table>
-        
-        {/* FOOTER TOTALS */}
         <div className="flex justify-end border-t-2 border-slate-800 pt-6">
-            <div className="w-72 space-y-3">
-                <div className="flex justify-between text-slate-400 text-sm">
-                    <span>Labor Total</span>
-                    <span>{fmt(totals.labor)}</span>
-                </div>
-                <div className="flex justify-between text-slate-400 text-sm">
-                    <span>Parts Total</span>
-                    <span>{fmt(totals.parts)}</span>
-                </div>
-                <div className="flex justify-between text-slate-400 text-sm border-b border-slate-800 pb-2">
-                    <span>Tax (7%)</span>
-                    <span>{fmt(totals.tax)}</span>
-                </div>
-                <div className="flex justify-between text-3xl font-bold text-white pt-2">
-                    <span>Total</span>
-                    <span className="text-green-400">{fmt(totals.total)}</span>
-                </div>
-            </div>
+          <div className="w-72 space-y-2">
+            <div className="flex justify-between text-slate-400 text-sm"><span>Labor</span><span>{fmt(totals.laborTotal)}</span></div>
+            <div className="flex justify-between text-slate-400 text-sm"><span>Parts</span><span>{fmt(totals.partsTotal)}</span></div>
+            <div className="flex justify-between text-slate-400 text-sm border-b border-slate-800 pb-2"><span>Tax ({settings.tax_rate}%)</span><span>{fmt(totals.taxAmt)}</span></div>
+            <div className="flex justify-between text-3xl font-bold text-white pt-1"><span>Total</span><span className="text-green-400">{fmt(totals.grandTotal)}</span></div>
+          </div>
         </div>
-
       </div>
     </div>
   )
