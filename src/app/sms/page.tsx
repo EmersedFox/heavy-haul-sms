@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -47,7 +47,7 @@ const STATUS_COLORS: Record<string, string> = {
   invoiced:         'bg-slate-500',
 }
 
-export default function SmsPage() {
+function SmsMessenger() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const bottomRef    = useRef<HTMLDivElement>(null)
@@ -775,5 +775,17 @@ export default function SmsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SmsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
+        <div className="text-slate-400 animate-pulse font-mono text-sm">Loading...</div>
+      </div>
+    }>
+      <SmsMessenger />
+    </Suspense>
   )
 }
