@@ -1,6 +1,3 @@
-import Link from 'next/link'
-import Image from 'next/image'
-
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-amber-500 selection:text-slate-900">
@@ -9,12 +6,10 @@ export default function LandingPage() {
       <header className="fixed w-full z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="relative h-12 w-48">
-            <Image 
+            <img 
               src="/cover.png" 
               alt="Heavy Haul Auto Service" 
-              fill 
-              className="object-contain object-left"
-              priority
+              className="absolute inset-0 w-full h-full object-contain object-left"
             />
           </div>
           <a href="tel:4637774429" className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-6 py-2 rounded-full transition-transform hover:scale-105">
@@ -75,13 +70,19 @@ export default function LandingPage() {
           <div className="mb-4 md:mb-0">
             &copy; {new Date().getFullYear()} Heavy Haul Auto Service LLC. All rights reserved.
           </div>
-          <div className="flex gap-6">
-            <a href="#" className="hover:text-amber-500 transition-colors">Privacy Policy</a>
+          <div className="flex gap-6 items-center">
+            {/* Added Links to the new legal pages */}
+            <a href="/privacy" className="hover:text-amber-500 transition-colors">
+              Privacy Policy
+            </a>
+            <a href="/terms" className="hover:text-amber-500 transition-colors">
+              Terms & Conditions
+            </a>
             
             {/* THE HIDDEN DOOR */}
-            <Link href="/login" className="hover:text-amber-500 transition-colors flex items-center gap-1">
+            <a href="/login" className="hover:text-amber-500 transition-colors flex items-center gap-1 ml-4 border-l border-slate-800 pl-6">
               <span className="w-2 h-2 bg-slate-800 rounded-full"></span> Staff Login
-            </Link>
+            </a>
           </div>
         </div>
       </footer>
