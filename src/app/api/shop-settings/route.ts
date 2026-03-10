@@ -40,7 +40,12 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json()
-    const allowed = ['labor_rate','parts_markup_retail','parts_markup_commercial','tax_rate','shop_name','shop_phone','shop_address']
+    // FIX: Added markup_matrix_retail and markup_matrix_commercial to allowed fields
+    const allowed = [
+      'labor_rate', 'parts_markup_retail', 'parts_markup_commercial', 'tax_rate',
+      'shop_name', 'shop_phone', 'shop_address',
+      'markup_matrix_retail', 'markup_matrix_commercial',
+    ]
     const updates: any = { updated_at: new Date().toISOString() }
     allowed.forEach(k => { if (body[k] !== undefined) updates[k] = body[k] })
 
