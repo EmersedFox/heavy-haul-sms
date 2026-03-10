@@ -11,7 +11,6 @@ export default function InvoicePage() {
   const [job, setJob] = useState<any>(null)
   
   const [invoiceJobs, setInvoiceJobs] = useState<any[]>([])
-  
   const [totals, setTotals] = useState({ parts: 0, labor: 0, tax: 0, total: 0 })
 
   useEffect(() => {
@@ -23,17 +22,13 @@ export default function InvoicePage() {
             const recs = inspData.recommendations
             let finalJobs = []
 
-            // 1. CHECK FOR NEW SYSTEM (service_lines)
             if (recs.service_lines && Array.isArray(recs.service_lines)) {
                 finalJobs = recs.service_lines
-            } 
-            // 2. FALLBACK FOR OLD INVOICES (Convert legacy data to new format)
-            else {
+            } else {
                 const approvedOld = Object.values(recs).filter((r: any) => r.decision === 'approved')
                 finalJobs = approvedOld.map((item: any) => ({
                     id: Math.random(),
                     title: item.service,
-                    // Force Number() conversion here just in case
                     labor: item.labor ? [{ desc: 'Service Labor', hours: 1, rate: Number(item.labor) }] : [], 
                     parts: item.parts ? [{ name: 'Service Parts', qty: 1, price: Number(item.parts), partNumber: 'N/A' }] : []
                 }))
@@ -41,14 +36,11 @@ export default function InvoicePage() {
 
             setInvoiceJobs(finalJobs)
 
-            // 3. CALCULATE TOTALS (Loop through hierarchies)
             let pTotal = 0
             let lTotal = 0
 
             finalJobs.forEach((j: any) => {
-                // Sum Labor (Safe Number conversion)
                 if(j.labor) j.labor.forEach((l: any) => lTotal += (Number(l.hours || 0) * Number(l.rate || 0)))
-                // Sum Parts (Safe Number conversion)
                 if(j.parts) j.parts.forEach((p: any) => pTotal += (Number(p.qty || 0) * Number(p.price || 0)))
             })
 
@@ -67,7 +59,7 @@ export default function InvoicePage() {
     alert('Invoice Link Copied!\n\n' + url)
   }
 
-  // Helper to format currency (Safely handles strings)
+  // FIX #4: Safe fmt helper with || 0 guard
   const fmt = (n: any) => {
       const num = Number(n) || 0
       return `$${num.toFixed(2)}`
@@ -84,6 +76,9 @@ export default function InvoicePage() {
           <h1 className="text-3xl font-bold">Invoice #{job.id.slice(0,8)}</h1>
           <p className="text-slate-400">{job.vehicles.customers.first_name} {job.vehicles.customers.last_name}</p>
           <p className="text-sm text-slate-500 mt-1">{job.vehicles.year} {job.vehicles.make} {job.vehicles.model}</p>
+          {job.odometer && (
+            <p className="text-sm text-slate-500 font-mono mt-0.5">ODO: {Number(job.odometer).toLocaleString()} mi</p>
+          )}
         </div>
         <div className="flex gap-3">
             <Link href={`/jobs/${id}`}>
@@ -114,57 +109,76 @@ export default function InvoicePage() {
             </thead>
             
             <tbody className="divide-y divide-slate-800/50">
+                {/* FIX #2: Use React.Fragment with key instead of bare <> */}
                 {invoiceJobs.map((jobLine, idx) => {
-                    // Calculate Job Subtotal with Safe Numbers
                     const jobLabor = jobLine.labor?.reduce((acc: number, l: any) => acc + (Number(l.hours || 0) * Number(l.rate || 0)), 0) || 0
                     const jobParts = jobLine.parts?.reduce((acc: number, p: any) => acc + (Number(p.qty || 0) * Number(p.price || 0)), 0) || 0
                     const jobTotal = jobLabor + jobParts
 
                     return (
-                        <>
-                            {/* JOB HEADER ROW */}
-                            <tr key={`header-${idx}`} className="bg-slate-800/50">
-                                <td className="py-3 pl-2 font-bold text-indigo-400" colSpan={3}>
-                                    {idx + 1}. {jobLine.title}
-                                </td>
-                                <td className="py-3 text-right font-bold text-indigo-400">
-                                    {fmt(jobTotal)}
-                                </td>
-                            </tr>
-
-                            {/* LABOR ROWS */}
-                            {jobLine.labor?.map((l: any, lIdx: number) => (
-                                <tr key={`labor-${idx}-${lIdx}`} className="text-slate-300 hover:bg-slate-800/30">
-                                    <td className="py-2 pl-6 text-sm">
-                                        <span className="text-slate-500 text-xs mr-2 uppercase tracking-wide">Labor</span>
-                                        {l.desc}
-                                    </td>
-                                    {/* FORCE NUMBER CONVERSION ON DISPLAY */}
-                                    <td className="py-2 text-center text-sm">{l.hours}</td>
-                                    <td className="py-2 text-right text-sm text-slate-400">{fmt(l.rate)}</td>
-                                    <td className="py-2 text-right text-sm">{fmt(Number(l.hours) * Number(l.rate))}</td>
-                                </tr>
-                            ))}
-
-                            {/* PARTS ROWS */}
-                            {jobLine.parts?.map((p: any, pIdx: number) => (
-                                <tr key={`part-${idx}-${pIdx}`} className="text-slate-300 hover:bg-slate-800/30">
-                                    <td className="py-2 pl-6 text-sm">
-                                        <span className="text-slate-500 text-xs mr-2 uppercase tracking-wide">Part</span>
-                                        {p.name} 
-                                        {p.partNumber && <span className="ml-2 font-mono text-xs text-slate-500 bg-slate-800 px-1 rounded">{p.partNumber}</span>}
-                                    </td>
-                                    {/* FORCE NUMBER CONVERSION ON DISPLAY */}
-                                    <td className="py-2 text-center text-sm">{p.qty}</td>
-                                    <td className="py-2 text-right text-sm text-slate-400">{fmt(p.price)}</td>
-                                    <td className="py-2 text-right text-sm">{fmt(Number(p.qty) * Number(p.price))}</td>
-                                </tr>
-                            ))}
-                            
-                            {/* Spacer Row */}
-                            <tr><td colSpan={4} className="h-4"></td></tr>
-                        </>
+                        <tr key={`job-group-${jobLine.id ?? idx}`} style={{ display: 'contents' }}>
+                            {/* Using a wrapper approach: render all rows flat with unique keys */}
+                        </tr>
                     )
+                })}
+                {invoiceJobs.map((jobLine, idx) => {
+                    const jobLabor = jobLine.labor?.reduce((acc: number, l: any) => acc + (Number(l.hours || 0) * Number(l.rate || 0)), 0) || 0
+                    const jobParts = jobLine.parts?.reduce((acc: number, p: any) => acc + (Number(p.qty || 0) * Number(p.price || 0)), 0) || 0
+                    const jobTotal = jobLabor + jobParts
+                    const groupKey = jobLine.id ?? idx
+
+                    // FIX #2: Flatten all rows into the array, each with a unique key
+                    const rows = []
+
+                    // JOB HEADER ROW
+                    rows.push(
+                        <tr key={`header-${groupKey}`} className="bg-slate-800/50">
+                            <td className="py-3 pl-2 font-bold text-indigo-400" colSpan={3}>
+                                {idx + 1}. {jobLine.title}
+                            </td>
+                            <td className="py-3 text-right font-bold text-indigo-400">
+                                {fmt(jobTotal)}
+                            </td>
+                        </tr>
+                    )
+
+                    // LABOR ROWS
+                    jobLine.labor?.forEach((l: any, lIdx: number) => {
+                        rows.push(
+                            <tr key={`labor-${groupKey}-${lIdx}`} className="text-slate-300 hover:bg-slate-800/30">
+                                <td className="py-2 pl-6 text-sm">
+                                    <span className="text-slate-500 text-xs mr-2 uppercase tracking-wide">Labor</span>
+                                    {l.desc}
+                                </td>
+                                <td className="py-2 text-center text-sm">{l.hours}</td>
+                                <td className="py-2 text-right text-sm text-slate-400">{fmt(l.rate)}</td>
+                                <td className="py-2 text-right text-sm">{fmt(Number(l.hours) * Number(l.rate))}</td>
+                            </tr>
+                        )
+                    })
+
+                    // PARTS ROWS
+                    jobLine.parts?.forEach((p: any, pIdx: number) => {
+                        rows.push(
+                            <tr key={`part-${groupKey}-${pIdx}`} className="text-slate-300 hover:bg-slate-800/30">
+                                <td className="py-2 pl-6 text-sm">
+                                    <span className="text-slate-500 text-xs mr-2 uppercase tracking-wide">Part</span>
+                                    {p.name} 
+                                    {p.partNumber && <span className="ml-2 font-mono text-xs text-slate-500 bg-slate-800 px-1 rounded">{p.partNumber}</span>}
+                                </td>
+                                <td className="py-2 text-center text-sm">{p.qty}</td>
+                                <td className="py-2 text-right text-sm text-slate-400">{fmt(p.price)}</td>
+                                <td className="py-2 text-right text-sm">{fmt(Number(p.qty) * Number(p.price))}</td>
+                            </tr>
+                        )
+                    })
+
+                    // SPACER ROW
+                    rows.push(
+                        <tr key={`spacer-${groupKey}`}><td colSpan={4} className="h-4"></td></tr>
+                    )
+
+                    return rows
                 })}
             </tbody>
         </table>

@@ -18,14 +18,17 @@ export default function AdminPage() {
   // Form State
   const [formData, setFormData] = useState({
     email: '',
-    password: '', // Only for new users
+    password: '',
     firstName: '',
     lastName: '',
     role: 'technician'
   })
   const [formLoading, setFormLoading] = useState(false)
 
-  // 1. Initial Load
+  // FIX #8: Delete confirmation state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
   useEffect(() => {
     const checkAccessAndFetch = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -33,7 +36,6 @@ export default function AdminPage() {
       
       setCurrentUserId(user.id)
 
-      // Verify Admin
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
       if (profile?.role !== 'admin') {
         router.push('/dashboard')
@@ -51,7 +53,6 @@ export default function AdminPage() {
     setLoading(false)
   }
 
-  // 2. Handlers
   const openAddModal = () => {
     setModalMode('add')
     setFormData({ email: '', password: '', firstName: '', lastName: '', role: 'technician' })
@@ -63,7 +64,7 @@ export default function AdminPage() {
     setEditingId(emp.id)
     setFormData({
       email: emp.email || '',
-      password: '', // No password edit here for security
+      password: '',
       firstName: emp.first_name || '',
       lastName: emp.last_name || '',
       role: emp.role || 'technician'
@@ -77,7 +78,6 @@ export default function AdminPage() {
 
     try {
       if (modalMode === 'add') {
-        // CALL THE API ROUTE
         const res = await fetch('/api/admin/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -87,7 +87,6 @@ export default function AdminPage() {
         if (!res.ok) throw new Error(data.error)
         
       } else {
-        // DIRECT DATABASE UPDATE (Edit)
         const { error } = await supabase
           .from('profiles')
           .update({
@@ -99,14 +98,31 @@ export default function AdminPage() {
         if (error) throw error
       }
 
-      // Success
       setIsModalOpen(false)
-      fetchTeam() // Refresh list
+      fetchTeam()
       
     } catch (error: any) {
       alert('Error: ' + error.message)
     } finally {
       setFormLoading(false)
+    }
+  }
+
+  // FIX #8: Delete user handler — calls API route with service role
+  const handleDeleteUser = async (userId: string) => {
+    setDeleteLoading(true)
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setDeleteConfirmId(null)
+      fetchTeam()
+    } catch (error: any) {
+      alert('Error deleting user: ' + error.message)
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
@@ -157,14 +173,41 @@ export default function AdminPage() {
                     </span>
                   </td>
                   <td className="p-4 text-right">
-                    {/* THE SAFETY CHECK: Do not show Edit button for yourself */}
                     {emp.id !== currentUserId && (
-                      <button 
-                        onClick={() => openEditModal(emp)}
-                        className="text-sm text-indigo-400 hover:text-white font-bold border border-indigo-500/30 px-3 py-1 rounded hover:bg-indigo-600 transition-colors"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <button 
+                          onClick={() => openEditModal(emp)}
+                          className="text-sm text-indigo-400 hover:text-white font-bold border border-indigo-500/30 px-3 py-1 rounded hover:bg-indigo-600 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        {/* FIX #8: Delete button with inline confirm */}
+                        {deleteConfirmId === emp.id ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-red-400 font-bold">Sure?</span>
+                            <button
+                              onClick={() => handleDeleteUser(emp.id)}
+                              disabled={deleteLoading}
+                              className="text-sm text-white font-bold border border-red-500 bg-red-600 hover:bg-red-500 px-3 py-1 rounded transition-colors disabled:opacity-50"
+                            >
+                              {deleteLoading ? '...' : 'Yes, Delete'}
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="text-sm text-slate-400 hover:text-white font-bold border border-slate-700 px-3 py-1 rounded transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => setDeleteConfirmId(emp.id)}
+                            className="text-sm text-red-400 hover:text-white font-bold border border-red-500/30 px-3 py-1 rounded hover:bg-red-600 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -175,7 +218,7 @@ export default function AdminPage() {
 
       </div>
 
-      {/* MODAL OVERLAY */}
+      {/* ADD/EDIT MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-lg w-full max-w-md p-6 shadow-2xl">
@@ -199,7 +242,6 @@ export default function AdminPage() {
                 />
               </div>
 
-              {/* Email/Pass only for ADD mode */}
               {modalMode === 'add' && (
                 <>
                   <input 
@@ -217,7 +259,6 @@ export default function AdminPage() {
                 </>
               )}
 
-              {/* Role Selector */}
               <div>
                 <label className="text-xs text-slate-500 uppercase font-bold mb-1 block">Role</label>
                 <select 
@@ -226,7 +267,7 @@ export default function AdminPage() {
                   className="bg-slate-950 border border-slate-700 rounded p-3 text-white w-full"
                 >
                   <option value="technician">Technician</option>
-				  <option value="advisor">Service Advisor</option>
+                  <option value="advisor">Service Advisor</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>

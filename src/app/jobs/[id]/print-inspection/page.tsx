@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabaseClient'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 
-// Define Tire Lists to separate them from General Items
 const TIRE_KEYS = [
   'LF (Left Front)', 'RF (Right Front)', 'LR (Left Rear)', 'RR (Right Rear)', 'Spare',
   'LF (Steer)', 'RF (Steer)', 
@@ -23,11 +22,9 @@ export default function InspectionPrintPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. SECURITY CHECK
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      // 2. Fetch Data
       const { data: jobData } = await supabase.from('jobs').select(`*, vehicles (*, customers (*))`).eq('id', id).single()
       const { data: inspData } = await supabase.from('inspections').select('checklist, recommendations').eq('job_id', id).single()
 
@@ -43,20 +40,12 @@ export default function InspectionPrintPage() {
 
   if (loading) return <div className="p-10 bg-white text-black font-sans">Loading Report...</div>
 
-  // --- FILTERS ---
   const allKeys = Object.keys(inspection)
-  
-  // 1. Separate Tires from General
   const tireItems = allKeys.filter(key => TIRE_KEYS.includes(key))
   const generalItems = allKeys.filter(key => !TIRE_KEYS.includes(key))
-
-  // 2. Filter Failures (General Only - Tires handled in Tire Section)
   const generalFailures = generalItems.filter(key => inspection[key].status === 'fail')
   const generalPass = generalItems.filter(key => inspection[key].status === 'pass')
-
-  // 3. Filter Tire Failures for the "Action Required" box
   const tireFailures = tireItems.filter(key => inspection[key].status === 'fail')
-
   const allFailures = [...generalFailures, ...tireFailures]
 
   return (
@@ -73,7 +62,6 @@ export default function InspectionPrintPage() {
         </div>
       </div>
 
-      {/* REPORT CONTENT */}
       <div className="flex-grow">
         
         {/* HEADER */}
@@ -94,7 +82,7 @@ export default function InspectionPrintPage() {
           </div>
         </div>
 
-        {/* VEHICLE INFO */}
+        {/* VEHICLE INFO — odometer added */}
         <div className="bg-slate-100 p-6 rounded-lg mb-8 border border-slate-200 grid grid-cols-2 gap-8 print:bg-transparent print:border-slate-300">
           <div>
             <h3 className="text-xs font-bold text-slate-400 uppercase mb-1">Customer</h3>
@@ -104,14 +92,19 @@ export default function InspectionPrintPage() {
           <div>
             <h3 className="text-xs font-bold text-slate-400 uppercase mb-1">Vehicle</h3>
             <p className="font-bold text-lg">{job.vehicles.year} {job.vehicles.make} {job.vehicles.model}</p>
-            <div className="flex gap-4 mt-1">
+            <div className="flex gap-4 mt-1 flex-wrap">
                <p className="font-mono text-slate-600 text-sm"><span className="text-slate-400">VIN:</span> {job.vehicles.vin || 'N/A'}</p>
                <p className="text-slate-600 text-sm"><span className="text-slate-400">Unit:</span> {job.vehicles.unit_number || 'N/A'}</p>
+               {job.odometer && (
+                 <p className="text-slate-600 text-sm font-mono">
+                   <span className="text-slate-400">ODO:</span> {Number(job.odometer).toLocaleString()} mi
+                 </p>
+               )}
             </div>
           </div>
         </div>
 
-        {/* SECTION 1: ACTION REQUIRED (Failures + Quotes) */}
+        {/* ACTION REQUIRED */}
         {allFailures.length > 0 && (
           <div className="mb-8 break-inside-avoid">
             <div className="flex items-center gap-2 mb-4 text-red-600 border-b border-red-200 pb-2">
@@ -129,15 +122,11 @@ export default function InspectionPrintPage() {
                       <span className="font-bold text-lg text-red-900">{item}</span>
                       <span className="px-3 py-1 bg-red-200 text-red-800 text-xs font-bold uppercase rounded print:border print:border-red-800">Failed</span>
                     </div>
-                    
-                    {/* Failure Note */}
                     {inspection[item].note && (
                        <div className="mt-2 text-sm text-red-800 italic">
                          Issue: "{inspection[item].note}"
                        </div>
                     )}
-
-                    {/* Advisor Quote Display */}
                     {hasQuote && (
                       <div className="mt-3 pt-3 border-t border-red-200 flex justify-between items-end">
                         <div>
@@ -160,14 +149,13 @@ export default function InspectionPrintPage() {
           </div>
         )}
 
-        {/* SECTION 2: TIRE HEALTH REPORT (All Tires + Measurements) */}
+        {/* TIRE HEALTH REPORT */}
         {tireItems.length > 0 && (
           <div className="mb-8 break-inside-avoid">
             <div className="flex items-center gap-2 mb-4 text-slate-700 border-b border-slate-200 pb-2">
               <span className="text-2xl">🛞</span>
               <h3 className="text-xl font-bold uppercase">Tire Health Report</h3>
             </div>
-            
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-500 uppercase text-xs">
@@ -195,13 +183,12 @@ export default function InspectionPrintPage() {
           </div>
         )}
 
-        {/* SECTION 3: PASSED GENERAL ITEMS */}
+        {/* PASSED GENERAL ITEMS */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-4 text-green-600 border-b border-green-200 pb-2">
             <span className="text-2xl">✅</span>
             <h3 className="text-xl font-bold uppercase">General Passed Items</h3>
           </div>
-          
           <div className="grid grid-cols-2 gap-x-12 gap-y-1 print:grid-cols-2">
             {generalPass.map(item => (
               <div key={item} className="flex justify-between items-center py-2 border-b border-slate-100 print:border-slate-200 break-inside-avoid">

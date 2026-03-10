@@ -4,17 +4,14 @@ import { supabase } from '@/lib/supabaseClient'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 
-// Simple ID generator
 const generateId = () => Math.random().toString(36).substr(2, 9)
 
-// 1. GENERAL ITEMS
 const GENERAL_CHECKLISTS: any = {
   car: ['Lights (Head/Tail/Brake)', 'Wipers & Washers', 'Horn', 'Brake Pads/Rotors', 'Fluid Levels', 'Battery Health', 'Belts & Hoses', 'Suspension Components', 'Exhaust System', 'Clutch / Transmission', 'Dashboard Warning Lights'],
   heavy_truck: ['Air Brake System (Leak Down)', 'Air Lines / Gladhands', 'Kingpin / 5th Wheel Lock', 'Springs / Air Bags', 'Steering Linkage', 'Lights & Reflectors', 'Fluid Levels (Oil/Coolant/DEF)', 'Clutch / Transmission', 'Belts & Hoses', 'Exhaust / DPF', 'Mudflaps', 'City Horn / Air Horn', 'Fire Extinguisher / Triangles'],
   trailer: ['Gladhands / Seals', 'Landing Gear / Crank', 'Floor / Decking Condition', 'Side Panels / Roof', 'Lights / Markers / ABS Light', 'Air Lines / Hoses', 'Brake Shoes / Drums', 'Slack Adjusters', 'Springs / Air Bags', 'Mudflaps', 'ICC Bar / Bumper']
 }
 
-// 2. TIRE CONFIGS
 const TIRE_CONFIGS: any = {
   car: ['LF (Left Front)', 'RF (Right Front)', 'LR (Left Rear)', 'RR (Right Rear)', 'Spare'],
   heavy_truck: ['LF (Steer)', 'RF (Steer)', '1LRO', '1LRI', '1RRI', '1RRO', '2LRO', '2LRI', '2RRI', '2RRO', '3LRO', '3LRI', '3RRI', '3RRO'],
@@ -27,22 +24,27 @@ export default function JobTicketPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
    
-  // Data State
   const [job, setJob] = useState<any>(null)
   const [techs, setTechs] = useState<any[]>([]) 
   const [notes, setNotes] = useState('')
   const [status, setStatus] = useState('')
+  const [odometer, setOdometer] = useState('')
   const [isArchived, setIsArchived] = useState(false)
   const [userRole, setUserRole] = useState('')
 
-  // Inspection State
   const [inspection, setInspection] = useState<any>({})
   const [recommendations, setRecommendations] = useState<any>({})
-  
-  // --- NEW: SERVICE JOBS STATE (The Repair Lines) ---
   const [serviceJobs, setServiceJobs] = useState<any[]>([])
 
   const [showInspection, setShowInspection] = useState(false)
+
+  // FIX #6: Inline toast state instead of alert()
+  const [toast, setToast] = useState<{ text: string; type: 'success' | 'info' } | null>(null)
+
+  const showToast = (text: string, type: 'success' | 'info' = 'info') => {
+    setToast({ text, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const fetchData = useCallback(async () => {
     try {
@@ -60,6 +62,7 @@ export default function JobTicketPage() {
       setJob(jobData)
       setNotes(jobData.tech_diagnosis || '')
       setStatus(jobData.status)
+      setOdometer(jobData.odometer ? String(jobData.odometer) : '')
       setIsArchived(jobData.is_archived || false)
       if (profileData) setTechs(profileData)
 
@@ -70,11 +73,9 @@ export default function JobTicketPage() {
       const savedChecklist = inspData?.checklist || {}
       const savedRecs = inspData?.recommendations || {}
       
-      // Load Service Jobs if they exist in the recommendations JSON
       if (savedRecs.service_lines) {
         setServiceJobs(savedRecs.service_lines)
       } else {
-        // Default to one empty job line if none exist
         setServiceJobs([{ id: generateId(), title: 'Diagnosis / Primary Repair', labor: [], parts: [] }])
       }
 
@@ -98,21 +99,16 @@ export default function JobTicketPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  const handleSave = async () => {
-    setSaving(true)
-    
-    // Update Job
-    const { error: jobError } = await supabase.from('jobs').update({ tech_diagnosis: notes, status: status }).eq('id', id)
-    if (jobError) { alert('Error saving status: ' + jobError.message); setSaving(false); return }
+  // Core save logic extracted so archive can call it too
+  const performSave = async () => {
+    const { error: jobError } = await supabase.from('jobs').update({ tech_diagnosis: notes, status: status, odometer: odometer ? parseInt(odometer) : null }).eq('id', id)
+    if (jobError) throw new Error('Error saving status: ' + jobError.message)
 
-    // Combine standard recs with our Service Jobs structure
-    // We are storing serviceJobs inside the existing 'recommendations' column to avoid DB changes
     const payloadRecs = {
         ...recommendations,
         service_lines: serviceJobs
     }
 
-    // Update Inspection
     await supabase.from('inspections').upsert(
       { 
         job_id: id, 
@@ -122,7 +118,17 @@ export default function JobTicketPage() {
       }, 
       { onConflict: 'job_id' }
     )
-    setSaving(false)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await performSave()
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleAssignTech = async (val: string) => {
@@ -131,12 +137,24 @@ export default function JobTicketPage() {
     await supabase.from('jobs').update({ assigned_tech_id: techId }).eq('id', id)
   }
 
+  // FIX #3: Archive now saves all work first before archiving
   const handleArchive = async () => {
     const newValue = !isArchived
-    if (newValue === true && !confirm('Archive this job?')) return
-    await supabase.from('jobs').update({ is_archived: newValue }).eq('id', id)
-    setIsArchived(newValue)
-    if (newValue) router.push('/dashboard')
+    if (newValue === true && !confirm('Save all current work and archive this job?')) return
+
+    setSaving(true)
+    try {
+      // Save current work first so nothing is lost
+      await performSave()
+      // Then archive
+      await supabase.from('jobs').update({ is_archived: newValue }).eq('id', id)
+      setIsArchived(newValue)
+      if (newValue) router.push('/dashboard')
+    } catch (err: any) {
+      alert('Error archiving: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const copyPublicLink = () => {
@@ -145,7 +163,7 @@ export default function JobTicketPage() {
     alert('Public Link Copied!\nSend this to the customer:\n\n' + url)
   }
 
-  // --- JOB LINE LOGIC (Dark Mode) ---
+  // --- JOB LINE LOGIC ---
 
   const addServiceJob = (title = '') => {
     setServiceJobs([...serviceJobs, { id: generateId(), title: title || '', labor: [], parts: [] }])
@@ -221,9 +239,6 @@ export default function JobTicketPage() {
     return { laborTotal, partsTotal, total: laborTotal + partsTotal }
   }
 
-
-  // --- HELPERS & LOGIC ---
-
   const toggleItem = (item: string, newStatus: string) => {
     setInspection({ ...inspection, [item]: { ...inspection[item], status: newStatus } })
   }
@@ -236,22 +251,17 @@ export default function JobTicketPage() {
     let newData = { ...recommendations[item], [field]: value }
     if (field === 'noCost' && value === true) { newData.parts = 0; newData.labor = 0 }
     
-    // --- MAGIC: If Approved, Add to Job Line ---
+    // FIX #6: Replace alert() with inline toast notification
     if (field === 'decision' && value === 'approved') {
         const existingJob = serviceJobs.find(j => j.title === (newData.service || item))
-        // Only add if it doesn't already exist to prevent duplicates
         if (!existingJob) {
              const newJobId = generateId()
-             
-             // FIX: TypeScript error fixed here by adding 'as any[]'
              const newJob = { 
                  id: newJobId, 
                  title: newData.service || `Repair: ${item}`, 
                  labor: [] as any[], 
                  parts: [] as any[]
              }
-             
-             // We temporarily add it to our state
              const jobWithItems = { ...newJob }
              if (newData.labor > 0) {
                  jobWithItems.labor.push({ id: generateId(), desc: 'Labor', hours: 1, rate: newData.labor })
@@ -259,9 +269,9 @@ export default function JobTicketPage() {
              if (newData.parts > 0) {
                  jobWithItems.parts.push({ id: generateId(), partNumber: '', name: 'Parts', qty: 1, price: newData.parts })
              }
-             
              setServiceJobs(prev => [...prev, jobWithItems])
-             alert(`Linked "${item}" to a new Job Line!`)
+             // FIX #6: Toast instead of alert()
+             showToast(`✅ "${item}" linked to a new Job Line`, 'success')
         }
     }
 
@@ -271,8 +281,6 @@ export default function JobTicketPage() {
   const canAssign = userRole === 'admin' || userRole === 'advisor'
   const canViewInvoice = userRole === 'admin' || userRole === 'advisor'
   const type = job?.vehicles?.vehicle_type || 'car'
-
-  // --- RENDERERS ---
 
   const renderRecommendationBox = (item: string) => {
     if (inspection[item].status !== 'fail') return null
@@ -341,6 +349,15 @@ export default function JobTicketPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-white pb-20">
       
+      {/* FIX #6: Toast notification (non-blocking, inline) */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-2xl font-bold text-sm transition-all ${
+          toast.type === 'success' ? 'bg-green-500 text-slate-900' : 'bg-indigo-600 text-white'
+        }`}>
+          {toast.text}
+        </div>
+      )}
+
       {/* HEADER */}
       <div className="bg-slate-900 border-b border-slate-800 p-6 sticky top-0 z-10 flex justify-between items-center shadow-md">
         <div>
@@ -381,7 +398,11 @@ export default function JobTicketPage() {
             </div>
             {canAssign && (
               <div className="pt-2 border-t border-slate-800">
-                {isArchived ? <button onClick={handleArchive} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-bold text-sm">📂 Restore</button> : <button onClick={handleArchive} className="w-full py-2 bg-transparent border border-slate-700 hover:border-slate-500 text-slate-500 hover:text-slate-300 rounded font-bold text-sm">🗄️ Archive</button>}
+                {/* FIX #3: Archive button label clarifies it saves first */}
+                {isArchived
+                  ? <button onClick={handleArchive} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-bold text-sm">📂 Restore Job</button>
+                  : <button onClick={handleArchive} className="w-full py-2 bg-transparent border border-slate-700 hover:border-slate-500 text-slate-500 hover:text-slate-300 rounded font-bold text-sm">🗄️ Save & Archive</button>
+                }
               </div>
             )}
             <div>
@@ -392,12 +413,26 @@ export default function JobTicketPage() {
           <div className="bg-slate-900 p-5 rounded-lg border border-slate-800 relative group">
             <div className="flex justify-between items-center mb-3"><h3 className="text-sm font-bold text-slate-400 uppercase">Vehicle & Customer</h3>{canAssign && <Link href={`/jobs/${id}/edit`} className="text-indigo-400 hover:text-white text-xs font-bold border border-indigo-500/30 px-2 py-1 rounded bg-indigo-500/10">✎ EDIT INFO</Link>}</div>
             <div className="space-y-2 text-sm">
-               <p><span className="text-slate-500">Owner:</span> {job.vehicles.customers.first_name} {job.vehicles.customers.last_name}</p>
-               <p><span className="text-slate-500">Phone:</span> {job.vehicles.customers.phone}</p>
+               <p><span className="text-slate-500">Owner:</span> {job.vehicles?.customers?.first_name} {job.vehicles?.customers?.last_name}</p>
+               <p><span className="text-slate-500">Phone:</span> {job.vehicles?.customers?.phone}</p>
                <div className="h-px bg-slate-800 my-2"></div>
-               <p><span className="text-slate-500">Vehicle:</span> {job.vehicles.year} {job.vehicles.make} {job.vehicles.model}</p>
-               <p><span className="text-slate-500">VIN:</span> <span className="font-mono">{job.vehicles.vin}</span></p>
-               <p className="text-slate-500">Type:</p> <span className="text-xs font-bold uppercase bg-slate-800 px-2 py-1 rounded">{job.vehicles.vehicle_type?.replace('_', ' ') || 'CAR'}</span>
+               <p><span className="text-slate-500">Vehicle:</span> {job.vehicles?.year} {job.vehicles?.make} {job.vehicles?.model}</p>
+               <p><span className="text-slate-500">VIN:</span> <span className="font-mono">{job.vehicles?.vin}</span></p>
+               <p className="text-slate-500">Type: <span className="text-xs font-bold uppercase bg-slate-800 px-2 py-1 rounded ml-1">{job.vehicles?.vehicle_type?.replace('_', ' ') || 'CAR'}</span></p>
+               <div className="h-px bg-slate-800 my-2"></div>
+               <div>
+                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">🔢 Odometer</label>
+                 <div className="relative">
+                   <input
+                     type="number"
+                     placeholder="e.g. 142500"
+                     value={odometer}
+                     onChange={(e) => setOdometer(e.target.value)}
+                     className="w-full bg-slate-950 border border-slate-700 rounded p-2 pr-10 text-white font-mono focus:border-amber-500 outline-none text-sm"
+                   />
+                   <span className="absolute right-3 top-2 text-xs text-slate-500 pointer-events-none">mi</span>
+                 </div>
+               </div>
             </div>
           </div>
         </div>
@@ -414,7 +449,7 @@ export default function JobTicketPage() {
                <div className="bg-red-900/10 border border-red-900/30 p-5 rounded-lg"><h3 className="text-red-400 text-sm font-bold uppercase mb-2">Customer Complaint</h3><p className="text-slate-200">{job.customer_complaint}</p></div>
                <div className="bg-slate-900 p-5 rounded-lg border border-slate-800 h-40 flex flex-col"><h3 className="text-sm font-bold text-slate-400 uppercase mb-3">Technician Diagnosis</h3><textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="flex-grow bg-slate-950 border border-slate-700 rounded p-4 text-white focus:border-amber-500 outline-none font-mono" placeholder="Technician notes..." /></div>
                
-               {/* --- JOB LINES / REPAIR ORDERS --- */}
+               {/* JOB LINES */}
                <div className="border-t border-slate-800 pt-6">
                  <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">🛠️ Repair Orders / Service Jobs</h2>
@@ -427,7 +462,6 @@ export default function JobTicketPage() {
                      return (
                        <div key={j.id} className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700 shadow-lg">
                          
-                         {/* Job Header */}
                          <div className="bg-slate-800 p-4 flex justify-between items-center border-b border-slate-700">
                            <div className="flex-grow mr-4">
                               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Job #{index + 1} Title</label>
@@ -472,7 +506,6 @@ export default function JobTicketPage() {
                                 <button onClick={() => addPart(j.id)} className="text-xs bg-slate-800 border border-slate-700 text-slate-300 px-2 py-1 rounded hover:bg-slate-700 hover:text-white">+ Add Part</button>
                             </div>
                             
-                            {/* Parts Header Row */}
                             {j.parts.length > 0 && (
                                 <div className="grid grid-cols-12 gap-2 mb-1 px-1 text-xs font-bold text-slate-500 uppercase">
                                     <div className="col-span-3">Part #</div>
@@ -509,7 +542,7 @@ export default function JobTicketPage() {
                
                {/* APPROVED WORK SUMMARY */}
                {getApprovedItems().length > 0 && (
-                 <div className="bg-green-900/10 border border-green-500/30 p-6 rounded-lg animate-pulse-slow">
+                 <div className="bg-green-900/10 border border-green-500/30 p-6 rounded-lg">
                    <h3 className="text-lg font-bold text-green-400 mb-4 flex items-center gap-2"><span>✅</span> APPROVED WORK - TO DO LIST</h3>
                    <div className="space-y-3">
                      {getApprovedItems().map(key => (
@@ -563,7 +596,6 @@ export default function JobTicketPage() {
                           </div>
                         </div>
                         
-                        {/* TIRE INPUT (ALWAYS VISIBLE) */}
                         <div className="relative">
                            <span className="absolute left-3 top-2.5 text-xs text-slate-500 pointer-events-none">DATA:</span>
                            <input 
@@ -575,7 +607,6 @@ export default function JobTicketPage() {
                            />
                         </div>
 
-                        {/* RECOMMENDATION (If Failed) */}
                         {inspection[item].status === 'fail' && renderRecommendationBox(item)}
                      </div>
                    ))}

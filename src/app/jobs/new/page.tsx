@@ -16,12 +16,13 @@ export default function NewJobPage() {
 
   // Selection State
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null) // <--- NEW
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
 
-  // Form State
+  // Form State — FIX #1: Added companyName field
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
+    companyName: '',   // ← ADDED
     phone: '',
     email: '',
     address: '',
@@ -49,11 +50,10 @@ export default function NewJobPage() {
     return () => clearTimeout(timer)
   }, [custSearchTerm])
 
-  // 2. VEHICLE SEARCH (NEW)
+  // 2. VEHICLE SEARCH
   useEffect(() => {
     const searchVehicles = async () => {
       if (vehSearchTerm.length < 2) { setVehResults([]); return }
-      // We need to fetch the vehicle AND the owner info
       const { data } = await supabase
         .from('vehicles')
         .select('*, customers(*)') 
@@ -72,6 +72,7 @@ export default function NewJobPage() {
       ...prev,
       firstName: cust.first_name,
       lastName: cust.last_name,
+      companyName: cust.company_name || '',   // ← ADDED
       phone: cust.phone || '',
       email: cust.email || '',
       address: cust.billing_address || ''
@@ -81,24 +82,20 @@ export default function NewJobPage() {
   }
 
   const selectVehicle = (veh: any) => {
-    // 1. Set Vehicle Data
     setSelectedVehicleId(veh.id)
-    
-    // 2. Set Customer Data (from the linked owner)
     if (veh.customers) {
       setSelectedCustomerId(veh.customers.id)
       setFormData(prev => ({
         ...prev,
-        // Vehicle Info
         year: veh.year,
         make: veh.make,
         model: veh.model,
         vin: veh.vin || '',
         unit_number: veh.unit_number || '',
         type: veh.vehicle_type || 'car',
-        // Customer Info
         firstName: veh.customers.first_name,
         lastName: veh.customers.last_name,
+        companyName: veh.customers.company_name || '',   // ← ADDED
         phone: veh.customers.phone || '',
         email: veh.customers.email || '',
         address: veh.customers.billing_address || ''
@@ -122,12 +119,13 @@ export default function NewJobPage() {
 
       // 1. Handle Customer
       if (!customerId) {
-        // Create New Customer
+        // Create New Customer — FIX #1: include company_name
         const { data: customer, error: custError } = await supabase
           .from('customers')
           .insert([{ 
             first_name: formData.firstName, 
             last_name: formData.lastName,
+            company_name: formData.companyName,   // ← ADDED
             phone: formData.phone,
             email: formData.email,
             billing_address: formData.address
@@ -137,16 +135,19 @@ export default function NewJobPage() {
         if (custError) throw custError
         customerId = customer.id
       } else {
-        // Update Existing Customer
+        // Update Existing Customer — FIX #1: include company_name
         await supabase
           .from('customers')
-          .update({ billing_address: formData.address, phone: formData.phone })
+          .update({
+            company_name: formData.companyName,   // ← ADDED
+            billing_address: formData.address,
+            phone: formData.phone
+          })
           .eq('id', customerId)
       }
 
       // 2. Handle Vehicle
       if (!vehicleId) {
-        // Create New Vehicle
         const { data: vehicle, error: vehError } = await supabase
           .from('vehicles')
           .insert([{
@@ -163,7 +164,6 @@ export default function NewJobPage() {
         if (vehError) throw vehError
         vehicleId = vehicle.id
       } else {
-        // Update Existing Vehicle (In case they fixed a VIN typo)
         await supabase
           .from('vehicles')
           .update({
@@ -261,6 +261,8 @@ export default function NewJobPage() {
             <div className="grid grid-cols-2 gap-4">
               <input name="firstName" placeholder="First Name" value={formData.firstName} onChange={handleChange} required className="bg-slate-800 border-slate-700 rounded p-3 text-white" />
               <input name="lastName" placeholder="Last Name" value={formData.lastName} onChange={handleChange} required className="bg-slate-800 border-slate-700 rounded p-3 text-white" />
+              {/* FIX #1: Company name field added */}
+              <input name="companyName" placeholder="Company (Optional)" value={formData.companyName} onChange={handleChange} className="col-span-2 bg-slate-800 border-slate-700 rounded p-3 text-white" />
               <input name="phone" placeholder="Phone" value={formData.phone} onChange={handleChange} required className="bg-slate-800 border-slate-700 rounded p-3 text-white" />
               <input name="email" placeholder="Email" value={formData.email} onChange={handleChange} className="bg-slate-800 border-slate-700 rounded p-3 text-white" />
               <input name="address" placeholder="Billing Address" value={formData.address} onChange={handleChange} className="col-span-2 bg-slate-800 border-slate-700 rounded p-3 text-white" />

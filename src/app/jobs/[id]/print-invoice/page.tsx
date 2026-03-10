@@ -20,7 +20,6 @@ export default function PrintInvoicePage() {
             const recs = inspData.recommendations
             let finalJobs = []
 
-            // 1. Load Service Lines (New System) or Convert Recommendations (Old System)
             if (recs.service_lines && Array.isArray(recs.service_lines)) {
                 finalJobs = recs.service_lines
             } else {
@@ -28,7 +27,6 @@ export default function PrintInvoicePage() {
                 finalJobs = approvedOld.map((item: any) => ({
                     id: Math.random(),
                     title: item.service,
-                    // Force Number conversion
                     labor: item.labor ? [{ desc: 'Service Labor', hours: 1, rate: Number(item.labor) }] : [], 
                     parts: item.parts ? [{ name: 'Service Parts', qty: 1, price: Number(item.parts), partNumber: 'N/A' }] : []
                 }))
@@ -36,7 +34,6 @@ export default function PrintInvoicePage() {
 
             setInvoiceJobs(finalJobs)
 
-            // 2. Calculate Totals (Force Numbers)
             let pTotal = 0
             let lTotal = 0
             finalJobs.forEach((j: any) => {
@@ -44,7 +41,7 @@ export default function PrintInvoicePage() {
                 if(j.parts) j.parts.forEach((p: any) => pTotal += (Number(p.qty || 0) * Number(p.price || 0)))
             })
 
-            const tax = pTotal * 0.07 // 7% Tax Rate
+            const tax = pTotal * 0.07
             setTotals({ parts: pTotal, labor: lTotal, tax, total: pTotal + lTotal + tax })
             setJob(jobData)
         }
@@ -53,7 +50,7 @@ export default function PrintInvoicePage() {
     fetchData()
   }, [id])
 
-  // Safe Currency Helper (Prevents the crash)
+  // FIX #4: Safe currency helper
   const fmt = (n: any) => {
       const num = Number(n) || 0
       return `$${num.toFixed(2)}`
@@ -107,14 +104,18 @@ export default function PrintInvoicePage() {
           <div>
             <h3 className="text-xs font-bold text-slate-400 uppercase mb-1">Vehicle Details</h3>
             <p className="font-bold text-lg">{job.vehicles.year} {job.vehicles.make} {job.vehicles.model}</p>
-            <div className="flex gap-4 mt-1">
+            <div className="flex gap-4 mt-1 flex-wrap">
                <p className="font-mono text-slate-600 text-sm"><span className="text-slate-400">VIN:</span> {job.vehicles.vin || 'N/A'}</p>
                <p className="text-slate-600 text-sm"><span className="text-slate-400">Unit:</span> {job.vehicles.unit_number || 'N/A'}</p>
+               {job.odometer && (
+                 <p className="font-mono text-slate-600 text-sm"><span className="text-slate-400">ODO:</span> {Number(job.odometer).toLocaleString()} mi</p>
+               )}
             </div>
           </div>
         </div>
 
         {/* INVOICE ITEMS TABLE */}
+        {/* FIX #2: Flatten rows into arrays with explicit keys instead of keyed fragments */}
         <div className="mb-8">
            <table className="w-full text-sm border-collapse">
               <thead>
@@ -127,45 +128,49 @@ export default function PrintInvoicePage() {
               </thead>
               <tbody className="divide-y divide-slate-200 border border-slate-200">
                 {invoiceJobs.map((jobLine, idx) => {
-                     // Calculate Line Total (Safe Numbers)
                      const jobLabor = jobLine.labor?.reduce((acc: any, l: any) => acc + (Number(l.hours) * Number(l.rate)), 0) || 0
                      const jobParts = jobLine.parts?.reduce((acc: any, p: any) => acc + (Number(p.qty) * Number(p.price)), 0) || 0
+                     const groupKey = jobLine.id ?? idx
                      
-                     return (
-                        <>
-                            {/* JOB HEADER ROW */}
-                            <tr key={idx} className="bg-slate-100 print:bg-slate-50 font-bold">
-                                <td className="p-3 text-slate-900" colSpan={3}>
-                                    <span className="text-amber-600 mr-2">{idx + 1}.</span> 
-                                    {jobLine.title}
-                                </td>
-                                <td className="p-3 text-right text-slate-900">{fmt(jobLabor + jobParts)}</td>
-                            </tr>
-                            
-                            {/* LABOR DETAILS */}
-                            {jobLine.labor?.map((l: any, i: number) => (
-                                <tr key={`l-${i}`} className="text-slate-600">
-                                    <td className="p-2 pl-8 text-xs italic">Labor: {l.desc}</td>
-                                    <td className="p-2 text-center text-xs">{l.hours}</td>
-                                    <td className="p-2 text-right text-xs">{fmt(l.rate)}</td>
-                                    <td className="p-2 text-right text-xs">{fmt(Number(l.hours) * Number(l.rate))}</td>
-                                </tr>
-                            ))}
+                     // FIX #2: Build flat array of rows, each with unique key
+                     const rows = []
 
-                            {/* PARTS DETAILS */}
-                            {jobLine.parts?.map((p: any, i: number) => (
-                                <tr key={`p-${i}`} className="text-slate-600">
-                                    <td className="p-2 pl-8 text-xs italic">
-                                        Part: {p.name} 
-                                        {p.partNumber && <span className="ml-2 font-mono text-slate-400 text-[10px]">{p.partNumber}</span>}
-                                    </td>
-                                    <td className="p-2 text-center text-xs">{p.qty}</td>
-                                    <td className="p-2 text-right text-xs">{fmt(p.price)}</td>
-                                    <td className="p-2 text-right text-xs">{fmt(Number(p.qty) * Number(p.price))}</td>
-                                </tr>
-                            ))}
-                        </>
+                     rows.push(
+                        <tr key={`header-${groupKey}`} className="bg-slate-100 print:bg-slate-50 font-bold">
+                            <td className="p-3 text-slate-900" colSpan={3}>
+                                <span className="text-amber-600 mr-2">{idx + 1}.</span> 
+                                {jobLine.title}
+                            </td>
+                            <td className="p-3 text-right text-slate-900">{fmt(jobLabor + jobParts)}</td>
+                        </tr>
                      )
+
+                     jobLine.labor?.forEach((l: any, i: number) => {
+                        rows.push(
+                            <tr key={`labor-${groupKey}-${i}`} className="text-slate-600">
+                                <td className="p-2 pl-8 text-xs italic">Labor: {l.desc}</td>
+                                <td className="p-2 text-center text-xs">{l.hours}</td>
+                                <td className="p-2 text-right text-xs">{fmt(l.rate)}</td>
+                                <td className="p-2 text-right text-xs">{fmt(Number(l.hours) * Number(l.rate))}</td>
+                            </tr>
+                        )
+                     })
+
+                     jobLine.parts?.forEach((p: any, i: number) => {
+                        rows.push(
+                            <tr key={`part-${groupKey}-${i}`} className="text-slate-600">
+                                <td className="p-2 pl-8 text-xs italic">
+                                    Part: {p.name} 
+                                    {p.partNumber && <span className="ml-2 font-mono text-slate-400 text-[10px]">{p.partNumber}</span>}
+                                </td>
+                                <td className="p-2 text-center text-xs">{p.qty}</td>
+                                <td className="p-2 text-right text-xs">{fmt(p.price)}</td>
+                                <td className="p-2 text-right text-xs">{fmt(Number(p.qty) * Number(p.price))}</td>
+                            </tr>
+                        )
+                     })
+
+                     return rows
                 })}
               </tbody>
            </table>

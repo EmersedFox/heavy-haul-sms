@@ -3,27 +3,25 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useParams } from 'next/navigation'
 
+// FIX #5: Move SHOP_INFO outside the component — it's a constant, not state.
+// This eliminates the ESLint exhaustive-deps warning (it was used inside useEffect
+// but declared inside the component, making it a missing dependency).
+const SHOP_INFO = {
+  name: "Heavy Haul Auto Service LLC",
+  address: "P.O. Box 4742, Carmel, IN 46082",
+  phone: "463-777-4429",
+  taxRate: 0.07
+}
+
 export default function PublicInvoicePage() {
   const { id } = useParams()
   const [loading, setLoading] = useState(true)
   const [job, setJob] = useState<any>(null)
-  
-  // Stores the list of Jobs (containers with parts/labor)
   const [invoiceJobs, setInvoiceJobs] = useState<any[]>([])
-  
   const [totals, setTotals] = useState({ parts: 0, labor: 0, tax: 0, total: 0 })
-
-  // SHOP SETTINGS
-  const SHOP_INFO = {
-    name: "Heavy Haul Auto Service LLC",
-    address: "P.O. Box 4742, Carmel, IN 46082",
-    phone: "463-777-4429",
-    taxRate: 0.07 // 7% Indiana Sales Tax
-  }
 
   useEffect(() => {
     async function fetchInvoiceData() {
-      // 1. Fetch Job & Customer Details
       const { data: jobData, error } = await supabase
         .from('jobs')
         .select(`*, vehicles (*, customers (*))`)
@@ -35,7 +33,6 @@ export default function PublicInvoicePage() {
         return
       }
 
-      // 2. Fetch Invoice Items
       const { data: inspData } = await supabase
         .from('inspections')
         .select('recommendations')
@@ -46,12 +43,9 @@ export default function PublicInvoicePage() {
         const recs = inspData.recommendations
         let finalJobs = []
 
-        // A. NEW SYSTEM: Check for Service Lines
         if (recs.service_lines && Array.isArray(recs.service_lines)) {
             finalJobs = recs.service_lines
-        } 
-        // B. OLD SYSTEM: Convert Legacy Recommendations
-        else {
+        } else {
             const approvedOld = Object.values(recs).filter((r: any) => r.decision === 'approved')
             finalJobs = approvedOld.map((item: any) => ({
                 id: Math.random(),
@@ -63,7 +57,6 @@ export default function PublicInvoicePage() {
 
         setInvoiceJobs(finalJobs)
 
-        // Calculate Totals
         let pTotal = 0
         let lTotal = 0
 
@@ -72,6 +65,7 @@ export default function PublicInvoicePage() {
             if(j.parts) j.parts.forEach((p: any) => pTotal += (Number(p.qty || 0) * Number(p.price || 0)))
         })
 
+        // FIX #5: SHOP_INFO.taxRate is now a stable module-level constant
         const tax = pTotal * SHOP_INFO.taxRate
         setTotals({ parts: pTotal, labor: lTotal, tax, total: pTotal + lTotal + tax })
       }
@@ -80,10 +74,13 @@ export default function PublicInvoicePage() {
       setLoading(false)
     }
     fetchInvoiceData()
-  }, [id])
+  }, [id]) // id is the only real dependency now
 
-  // Helper for Currency
-  const fmt = (n: number) => `$${n.toFixed(2)}`
+  // FIX #4: Safe fmt helper with || 0 guard (matches other invoice pages)
+  const fmt = (n: any) => {
+    const num = Number(n) || 0
+    return `$${num.toFixed(2)}`
+  }
 
   if (loading) return <div className="p-10 text-center font-bold text-slate-500">Loading Invoice...</div>
   if (!job) return <div className="p-10 text-center text-red-500">Invoice not found.</div>
@@ -121,6 +118,7 @@ export default function PublicInvoicePage() {
             <p className="font-bold text-xl text-slate-800">{job.vehicles.year} {job.vehicles.make} {job.vehicles.model}</p>
             <p className="text-slate-500 font-mono text-sm">VIN: {job.vehicles.vin}</p>
             {job.vehicles.unit_number && <p className="text-xs bg-slate-100 inline-block px-2 py-1 rounded mt-1 border border-slate-200">Unit #{job.vehicles.unit_number}</p>}
+            {job.odometer && <p className="text-slate-500 font-mono text-sm mt-1">ODO: {Number(job.odometer).toLocaleString()} mi</p>}
           </div>
         </div>
 
@@ -133,14 +131,12 @@ export default function PublicInvoicePage() {
               <p className="text-center text-slate-400 italic py-4">No billable items.</p>
             ) : (
               invoiceJobs.map((jobLine: any, index: number) => {
-                 // Calculate Line Total for Display
-                 const lineLabor = jobLine.labor?.reduce((acc: number, l: any) => acc + (l.hours * l.rate), 0) || 0
-                 const lineParts = jobLine.parts?.reduce((acc: number, p: any) => acc + (p.qty * p.price), 0) || 0
+                 const lineLabor = jobLine.labor?.reduce((acc: number, l: any) => acc + (Number(l.hours) * Number(l.rate)), 0) || 0
+                 const lineParts = jobLine.parts?.reduce((acc: number, p: any) => acc + (Number(p.qty) * Number(p.price)), 0) || 0
                  const lineTotal = lineLabor + lineParts
 
                  return (
-                    <div key={index} className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
-                        {/* Job Title Row */}
+                    <div key={jobLine.id ?? index} className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
                         <div className="flex justify-between items-start mb-2">
                            <div className="pr-4">
                               <p className="font-bold text-lg text-slate-800">
@@ -153,18 +149,17 @@ export default function PublicInvoicePage() {
                            </div>
                         </div>
 
-                        {/* Detail Rows (Labor & Parts) */}
                         <div className="pl-6 space-y-1">
                             {jobLine.labor?.map((l: any, i: number) => (
                                 <div key={`l-${i}`} className="flex justify-between text-sm text-slate-500">
                                     <span>Labor: {l.desc} <span className="text-xs text-slate-400">({l.hours} hrs)</span></span>
-                                    <span>{fmt(l.hours * l.rate)}</span>
+                                    <span>{fmt(Number(l.hours) * Number(l.rate))}</span>
                                 </div>
                             ))}
                             {jobLine.parts?.map((p: any, i: number) => (
                                 <div key={`p-${i}`} className="flex justify-between text-sm text-slate-500">
                                     <span>Part: {p.name} <span className="text-xs text-slate-400">(x{p.qty})</span></span>
-                                    <span>{fmt(p.qty * p.price)}</span>
+                                    <span>{fmt(Number(p.qty) * Number(p.price))}</span>
                                 </div>
                             ))}
                         </div>
@@ -199,7 +194,7 @@ export default function PublicInvoicePage() {
           </div>
         </div>
 
-        {/* FOOTER ACTION (Hidden on Print) */}
+        {/* FOOTER ACTION */}
         <div className="p-4 bg-slate-900 text-center print:hidden">
           <button 
             onClick={() => window.print()} 
